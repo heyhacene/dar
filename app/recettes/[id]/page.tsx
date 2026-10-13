@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Recipe } from '@/types';
-import { loadLocalData, saveLocalData } from '@/lib/storage';
-import { ArrowLeft, Users, Clock, Flame, Trash2 } from 'lucide-react';
+import { Recipe, ShoppingItem } from '@/types';
+import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { ArrowLeft, Users, Clock, Flame, Trash2, ShoppingCart, Plus, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function RecipeDetailPage() {
@@ -12,6 +12,7 @@ export default function RecipeDetailPage() {
   const router = useRouter();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [servings, setServings] = useState<number>(4);
+  const [addedNotice, setAddedNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const data = loadLocalData();
@@ -39,6 +40,60 @@ export default function RecipeDetailPage() {
     };
     saveLocalData(updated);
     router.push('/recettes');
+  }
+
+  // AJOUT EN 1 CLIC DE TOUS LES INGRÉDIENTS À LA LISTE DE COURSES
+  function handleAddAllToShoppingList() {
+    if (!recipe) return;
+    const data = loadLocalData();
+
+    const newItems: ShoppingItem[] = recipe.ingredients.map((ing) => ({
+      id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: `${ing.name} (${recipe.title})`,
+      quantity: Math.round(ing.quantity * scale * 10) / 10,
+      unit: ing.unit,
+      category: ing.category || 'epicerie',
+      checked: false,
+      isCustom: true,
+    }));
+
+    const updated = {
+      ...data,
+      customShoppingItems: [...newItems, ...data.customShoppingItems],
+    };
+
+    saveLocalData(updated);
+    syncWithGoogle(updated);
+
+    setAddedNotice(`${newItems.length} ingrédients ajoutés à votre liste de courses !`);
+    setTimeout(() => setAddedNotice(null), 4000);
+  }
+
+  // AJOUT D'UN SEUL INGRÉDIENT AU CHOIX
+  function handleAddSingleIngredient(ing: typeof recipe.ingredients[0]) {
+    const data = loadLocalData();
+    const adjustedQuantity = Math.round(ing.quantity * scale * 10) / 10;
+
+    const newItem: ShoppingItem = {
+      id: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: `${ing.name} (${recipe.title})`,
+      quantity: adjustedQuantity,
+      unit: ing.unit,
+      category: ing.category || 'epicerie',
+      checked: false,
+      isCustom: true,
+    };
+
+    const updated = {
+      ...data,
+      customShoppingItems: [newItem, ...data.customShoppingItems],
+    };
+
+    saveLocalData(updated);
+    syncWithGoogle(updated);
+
+    setAddedNotice(`« ${ing.name} » ajouté aux courses !`);
+    setTimeout(() => setAddedNotice(null), 3000);
   }
 
   return (
@@ -78,6 +133,22 @@ export default function RecipeDetailPage() {
       </div>
 
       <div className="p-4 space-y-5">
+        {/* Notification après ajout aux courses */}
+        {addedNotice && (
+          <div className="p-3.5 bg-emerald-500 text-white rounded-2xl shadow-lg flex items-center justify-between animate-in slide-in-from-top">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              <span>{addedNotice}</span>
+            </div>
+            <Link
+              href="/courses"
+              className="px-2.5 py-1 bg-white text-emerald-800 rounded-lg text-xs font-bold hover:bg-emerald-50 transition"
+            >
+              Voir la liste →
+            </Link>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-orange-50/70 p-3 rounded-2xl border border-orange-100 flex items-center gap-3">
             <Clock className="w-5 h-5 text-primary-600" />
@@ -96,7 +167,7 @@ export default function RecipeDetailPage() {
         </div>
 
         {/* CALCULATEUR DE PROPORTIONS SELON LE NOMBRE DE PERSONNES */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-3">
+        <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-primary-600" />
@@ -121,19 +192,38 @@ export default function RecipeDetailPage() {
             </div>
           </div>
 
-          <h3 className="font-bold text-gray-900 text-sm pt-2 border-t border-gray-100">
-            Ingrédients proportionnés :
-          </h3>
+          {/* BOUTON D'AJOUT EN 1 CLIC */}
+          <button
+            onClick={handleAddAllToShoppingList}
+            className="w-full py-3 px-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-bold rounded-xl text-sm shadow-sm transition flex items-center justify-center gap-2"
+          >
+            <ShoppingCart className="w-4 h-4" />
+            <span>Ajouter tous les ingrédients à ma liste de courses</span>
+          </button>
+
+          <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+            <h3 className="font-bold text-gray-900 text-sm">Ingrédients proportionnés :</h3>
+            <span className="text-[11px] text-gray-400">Cliquez sur « + » pour un seul ingrédient</span>
+          </div>
 
           <ul className="divide-y divide-gray-100 text-sm">
             {recipe.ingredients.map((ing) => {
               const adjustedQuantity = Math.round(ing.quantity * scale * 10) / 10;
               return (
-                <li key={ing.id} className="py-2.5 flex justify-between items-center">
-                  <span className="text-gray-800">{ing.name}</span>
-                  <span className="font-bold text-primary-600 text-xs bg-orange-50 px-2 py-1 rounded-md">
-                    {adjustedQuantity} {ing.unit}
-                  </span>
+                <li key={ing.id} className="py-2.5 flex justify-between items-center group">
+                  <span className="text-gray-800 font-medium text-xs sm:text-sm">{ing.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-primary-600 text-xs bg-orange-50 px-2 py-1 rounded-md">
+                      {adjustedQuantity} {ing.unit}
+                    </span>
+                    <button
+                      onClick={() => handleAddSingleIngredient(ing)}
+                      className="p-1 rounded-md text-gray-400 hover:text-primary-600 hover:bg-orange-50 transition"
+                      title="Ajouter cet ingrédient uniquement aux courses"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
                 </li>
               );
             })}
