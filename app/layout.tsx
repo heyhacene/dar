@@ -31,7 +31,7 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body className="h-full flex flex-col max-w-lg mx-auto bg-white shadow-xl min-h-screen relative pb-20">
+      <body className="h-full flex flex-col max-w-lg mx-auto bg-white shadow-xl min-h-screen relative pb-36">
         <main className="flex-1">{children}</main>
         <BottomNav />
       </body>

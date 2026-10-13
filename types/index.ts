@@ -22,9 +22,11 @@ export interface Recipe {
 
 export type DayOfWeek = 'lundi' | 'mardi' | 'mercredi' | 'jeudi' | 'vendredi' | 'samedi' | 'dimanche';
 export type MealType = 'midi' | 'soir';
+export type WeekSelection = 's1' | 's2';
 
 export interface PlannedMeal {
   id: string;
+  week?: WeekSelection;
   day: DayOfWeek;
   type: MealType;
   recipeId?: string;
@@ -44,7 +46,7 @@ export interface ShoppingItem {
 
 export interface AppData {
   recipes: Recipe[];
-  weeklyPlan: Record<string, PlannedMeal>; // clé: `${day}_${type}`
+  weeklyPlan: Record<string, PlannedMeal>; // clé: `${week}_${day}_${type}` ou `${day}_${type}`
   customShoppingItems: ShoppingItem[];
   checkedItems: Record<string, boolean>;
   lastSync?: string;

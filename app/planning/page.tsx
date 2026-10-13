@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import AddMealModal from '@/components/AddMealModal';
-import { AppData, DayOfWeek, MealType, PlannedMeal } from '@/types';
+import { AppData, DayOfWeek, MealType, PlannedMeal, WeekSelection } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import { Plus, Users, Trash2, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
@@ -20,6 +20,7 @@ const DAYS: { key: DayOfWeek; label: string }[] = [
 
 export default function PlanningPage() {
   const [data, setData] = useState<AppData | null>(null);
+  const [activeWeek, setActiveWeek] = useState<WeekSelection>('s1');
   const [modalSlot, setModalSlot] = useState<{ day: DayOfWeek; type: MealType } | null>(null);
 
   useEffect(() => {
@@ -33,11 +34,24 @@ export default function PlanningPage() {
     setModalSlot({ day, type });
   };
 
+  const getMealKey = (week: WeekSelection, day: DayOfWeek, type: MealType) => `${week}_${day}_${type}`;
+
+  const getMeal = (week: WeekSelection, day: DayOfWeek, type: MealType): PlannedMeal | undefined => {
+    const key = getMealKey(week, day, type);
+    if (data.weeklyPlan[key]) return data.weeklyPlan[key];
+    // Rétrocompatibilité avec les repas sans préfixe de semaine
+    if (week === 's1' && data.weeklyPlan[`${day}_${type}`]) {
+      return data.weeklyPlan[`${day}_${type}`];
+    }
+    return undefined;
+  };
+
   const handleSaveMeal = (mealInfo: { recipeId?: string; customTitle?: string; servings: number }) => {
     if (!modalSlot) return;
-    const key = `${modalSlot.day}_${modalSlot.type}`;
+    const key = getMealKey(activeWeek, modalSlot.day, modalSlot.type);
     const newMeal: PlannedMeal = {
       id: `p_${Date.now()}`,
+      week: activeWeek,
       day: modalSlot.day,
       type: modalSlot.type,
       ...mealInfo,
@@ -57,9 +71,12 @@ export default function PlanningPage() {
   };
 
   const handleDirectDelete = (day: DayOfWeek, type: MealType) => {
-    const key = `${day}_${type}`;
+    const key = getMealKey(activeWeek, day, type);
     const copy = { ...data.weeklyPlan };
     delete copy[key];
+    if (activeWeek === 's1') {
+      delete copy[`${day}_${type}`];
+    }
 
     const updated: AppData = { ...data, weeklyPlan: copy };
     setData(updated);
@@ -74,39 +91,77 @@ export default function PlanningPage() {
   };
 
   const handleClearWeek = () => {
-    if (!confirm('Voulez-vous vider tous les repas de cette semaine ?')) return;
-    const updated: AppData = {
-      ...data,
-      weeklyPlan: {},
-    };
+    const weekTitle = activeWeek === 's1' ? 'cette semaine' : 'la semaine prochaine';
+    if (!confirm(`Voulez-vous vider tous les repas pour ${weekTitle} ?`)) return;
+    const copy = { ...data.weeklyPlan };
+    Object.keys(copy).forEach((k) => {
+      if (k.startsWith(`${activeWeek}_`) || (activeWeek === 's1' && !k.startsWith('s1_') && !k.startsWith('s2_'))) {
+        delete copy[k];
+      }
+    });
+
+    const updated: AppData = { ...data, weeklyPlan: copy };
     setData(updated);
     saveLocalData(updated);
     syncWithGoogle(updated);
   };
 
-  const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
+  // Calcul du nombre de repas sur la semaine active
+  const weekMealsCount = DAYS.reduce((count, day) => {
+    const lunch = getMeal(activeWeek, day.key, 'midi');
+    const dinner = getMeal(activeWeek, day.key, 'soir');
+    return count + (lunch ? 1 : 0) + (dinner ? 1 : 0);
+  }, 0);
 
   return (
-    <div>
-      <Header title="Planning de la semaine" onRefresh={() => syncWithGoogle(data).then(setData)} />
+    <div className="pb-32">
+      <Header title="Planning des repas" onRefresh={() => syncWithGoogle(data).then(setData)} />
 
       <div className="p-4 space-y-4">
-        {/* Bannière d'actions */}
+        {/* SÉLECTEUR 2 SEMAINES */}
+        <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-2xl text-xs font-bold shadow-xs">
+          <button
+            type="button"
+            onClick={() => setActiveWeek('s1')}
+            className={`py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+              activeWeek === 's1'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <CalendarDays className={`w-4 h-4 ${activeWeek === 's1' ? 'text-primary-600' : 'text-gray-400'}`} />
+            <span>Cette semaine</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveWeek('s2')}
+            className={`py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+              activeWeek === 's2'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            <CalendarDays className={`w-4 h-4 ${activeWeek === 's2' ? 'text-primary-600' : 'text-gray-400'}`} />
+            <span>Semaine prochaine</span>
+          </button>
+        </div>
+
+        {/* Bannière résumé & actions */}
         <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-md flex items-center justify-between">
           <div>
-            <h2 className="font-bold text-base">Menu de la semaine</h2>
+            <h2 className="font-bold text-base">
+              {activeWeek === 's1' ? 'Menu de cette semaine' : 'Menu de la semaine prochaine'}
+            </h2>
             <p className="text-xs text-orange-100">
-              {hasPlannedMeals
-                ? `${Object.keys(data.weeklyPlan).length} repas prévu(s)`
-                : 'Planning vide pour le moment'}
+              {weekMealsCount > 0 ? `${weekMealsCount} repas programmé(s)` : 'Aucun repas programmé'}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {hasPlannedMeals && (
+            {weekMealsCount > 0 && (
               <button
                 onClick={handleClearWeek}
                 className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-xl text-xs backdrop-blur-md transition flex items-center gap-1"
-                title="Vider tous les repas de la semaine"
+                title="Vider cette semaine"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Vider</span>
@@ -124,8 +179,8 @@ export default function PlanningPage() {
         {/* Grille du Lundi au Dimanche */}
         <div className="space-y-3">
           {DAYS.map(({ key, label }) => {
-            const lunch = data.weeklyPlan[`${key}_midi`];
-            const dinner = data.weeklyPlan[`${key}_soir`];
+            const lunch = getMeal(activeWeek, key, 'midi');
+            const dinner = getMeal(activeWeek, key, 'soir');
             const lunchRecipe = lunch?.recipeId ? data.recipes.find((r) => r.id === lunch.recipeId) : null;
             const dinnerRecipe = dinner?.recipeId ? data.recipes.find((r) => r.id === dinner.recipeId) : null;
 
@@ -238,10 +293,10 @@ export default function PlanningPage() {
           day={modalSlot.day}
           type={modalSlot.type}
           recipes={data.recipes}
-          initialMeal={data.weeklyPlan[`${modalSlot.day}_${modalSlot.type}`]}
+          initialMeal={getMeal(activeWeek, modalSlot.day, modalSlot.type)}
           onClose={() => setModalSlot(null)}
           onSave={handleSaveMeal}
-          onDelete={data.weeklyPlan[`${modalSlot.day}_${modalSlot.type}`] ? handleDeleteMeal : undefined}
+          onDelete={getMeal(activeWeek, modalSlot.day, modalSlot.type) ? handleDeleteMeal : undefined}
         />
       )}
     </div>

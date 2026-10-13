@@ -57,7 +57,7 @@ export default function RecettesPage() {
       const newRecipe: Recipe = {
         id: `rec_${Date.now()}`,
         title: imported.title || 'Recette Cookidoo',
-        category: imported.category || 'plat',
+        category: (imported.category as any) || 'plat',
         defaultServings: imported.defaultServings || 4,
         prepTimeMinutes: imported.prepTimeMinutes || 15,
         cookTimeMinutes: imported.cookTimeMinutes || 25,
@@ -90,38 +90,50 @@ export default function RecettesPage() {
   }
 
   return (
-    <div>
+    <div className="pb-32">
       <Header title="Carnet de Recettes" />
 
       <div className="p-4 space-y-4">
-        {/* Barre de boutons d'action rapide */}
-        <div className="flex gap-2">
+        {/* BANNIÈRE COOKIDOO ULTRA-VISIBLE */}
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 p-4 rounded-2xl text-white shadow-md flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-sm sm:text-base flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-emerald-200" />
+              <span>Importer depuis Cookidoo</span>
+            </h2>
+            <p className="text-xs text-emerald-100 mt-0.5">
+              Collez le lien ou texte Thermomix en 1 clic
+            </p>
+          </div>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex-1 py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs shadow-xs flex items-center justify-center gap-2 transition"
+            className="py-2 px-3.5 bg-white text-emerald-800 font-bold rounded-xl text-xs hover:bg-emerald-50 transition shadow-sm flex items-center gap-1.5 whitespace-nowrap"
           >
-            <Wand2 className="w-4 h-4" />
-            <span>Importer Cookidoo / Web</span>
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>Importer</span>
           </button>
-          <Link
-            href="/recettes/nouvelle"
-            className="py-2.5 px-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
-          >
-            <Plus className="w-4 h-4 text-primary-600" />
-            <span>Créer manuellement</span>
-          </Link>
         </div>
 
-        {/* Barre de recherche */}
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher une recette..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
-          />
+        {/* Barre de recherche et ajout manuel */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Rechercher une recette..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
+            />
+          </div>
+          <Link
+            href="/recettes/nouvelle"
+            className="p-2.5 bg-primary-600 text-white rounded-xl shadow-sm hover:bg-primary-700 transition flex items-center gap-1 text-xs font-semibold"
+            title="Créer une recette manuellement"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Créer</span>
+          </Link>
         </div>
 
         {/* Filtres par catégorie */}
@@ -195,14 +207,14 @@ export default function RecettesPage() {
               <ChefHat className="w-12 h-12 mx-auto stroke-1 mb-2" />
               <p className="text-sm font-semibold text-gray-600">Aucune recette trouvée</p>
               <p className="text-xs text-gray-400 mt-1">
-                Importez une recette Cookidoo ou créez-en une nouvelle avec le bouton ci-dessus.
+                Touchez « Importer » en haut pour ajouter une recette Cookidoo.
               </p>
             </div>
           )}
         </div>
       </div>
 
-      {/* MODALE D'IMPORTATION COOKIDOO ULTRA-SIMPLE */}
+      {/* MODALE D'IMPORTATION COOKIDOO */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom">
@@ -225,7 +237,6 @@ export default function RecettesPage() {
             </div>
 
             <form onSubmit={handleImport} className="p-5 space-y-4 overflow-y-auto">
-              {/* Tutoriel Cookidoo pas-à-pas */}
               <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-2xl text-xs text-emerald-950 space-y-2">
                 <p className="font-bold flex items-center gap-1.5 text-emerald-900">
                   <Share2 className="w-4 h-4" /> Comment faire depuis l'application Cookidoo :

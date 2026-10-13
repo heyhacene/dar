@@ -41,7 +41,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div>
+    <div className="pb-32">
       <Header title="Paramètres & Synchronisation" />
 
       <div className="p-4 space-y-4">

@@ -4,26 +4,34 @@ import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import { AppData, ShoppingItem } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
-import { Check, Plus, ShoppingBag, Trash2, Info } from 'lucide-react';
+import { Check, Plus, ShoppingBag, Trash2, Info, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 
 export default function CoursesPage() {
   const [data, setData] = useState<AppData | null>(null);
   const [newItemText, setNewItemText] = useState('');
+  const [weekFilter, setWeekFilter] = useState<'all' | 's1' | 's2'>('all');
 
   useEffect(() => {
     const loaded = loadLocalData();
     setData(loaded);
   }, []);
 
-  // Consolidation des ingrédients depuis le planning de la semaine
+  // Consolidation des ingrédients depuis le planning de la semaine (filtré par semaine)
   const aggregatedItems = useMemo(() => {
     if (!data) return [];
 
     const map = new Map<string, { name: string; quantity: number; unit: string; category: string }>();
 
-    Object.values(data.weeklyPlan).forEach((meal) => {
+    Object.entries(data.weeklyPlan).forEach(([slotKey, meal]) => {
       if (!meal.recipeId) return;
+
+      const isS2 = slotKey.startsWith('s2_') || meal.week === 's2';
+      const isS1 = !isS2;
+
+      if (weekFilter === 's1' && !isS1) return;
+      if (weekFilter === 's2' && !isS2) return;
+
       const recipe = data.recipes.find((r) => r.id === meal.recipeId);
       if (!recipe) return;
 
@@ -60,7 +68,7 @@ export default function CoursesPage() {
     });
 
     return list;
-  }, [data]);
+  }, [data, weekFilter]);
 
   if (!data) return <div className="p-8 text-center text-gray-500">Génération de la liste...</div>;
 
@@ -151,10 +159,41 @@ export default function CoursesPage() {
   const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
 
   return (
-    <div>
+    <div className="pb-32">
       <Header title="Liste de Courses" onRefresh={() => syncWithGoogle(data).then(setData)} />
 
       <div className="p-4 space-y-4">
+        {/* Sélecteur de période pour les courses (2 semaines) */}
+        <div className="grid grid-cols-3 p-1 bg-gray-100 rounded-2xl text-[11px] font-bold shadow-xs">
+          <button
+            type="button"
+            onClick={() => setWeekFilter('all')}
+            className={`py-2 rounded-xl transition ${
+              weekFilter === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Les 2 semaines
+          </button>
+          <button
+            type="button"
+            onClick={() => setWeekFilter('s1')}
+            className={`py-2 rounded-xl transition ${
+              weekFilter === 's1' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Cette semaine
+          </button>
+          <button
+            type="button"
+            onClick={() => setWeekFilter('s2')}
+            className={`py-2 rounded-xl transition ${
+              weekFilter === 's2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Semaine pro.
+          </button>
+        </div>
+
         {/* Résumé */}
         <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs flex items-center justify-between">
           <div>
