@@ -4,15 +4,26 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { loadLocalData, saveLocalData } from '@/lib/storage';
 import { AppData } from '@/types';
-import { Cloud, Download, Upload, ShieldCheck, Palette, Sun, Moon, Monitor } from 'lucide-react';
+import { Cloud, Download, Upload, ShieldCheck, Palette, Sun, Moon, Monitor, Bell, BellRing, BellOff, Check } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  sendLocalNotification,
+} from '@/lib/notifications';
 
 export default function SettingsPage() {
   const [data, setData] = useState<AppData | null>(null);
   const { preference, setPreference } = useTheme();
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+  const [testSent, setTestSent] = useState(false);
 
   useEffect(() => {
     setData(loadLocalData());
+    if (isNotificationSupported()) {
+      setNotifPermission(getNotificationPermission());
+    }
   }, []);
 
   function handleExport() {
@@ -74,6 +85,80 @@ export default function SettingsPage() {
             ))}
           </div>
           <p className="text-xs text-gray-500">« Auto » suit le réglage clair/sombre de votre téléphone.</p>
+        </div>
+
+        {/* Notifications */}
+        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell className="w-5 h-5 text-primary-600" />
+              <h2 className="font-bold text-sm text-gray-900">Notifications</h2>
+            </div>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                notifPermission === 'granted'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : notifPermission === 'denied'
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-gray-100 text-gray-600'
+              }`}
+            >
+              {notifPermission === 'granted'
+                ? 'Activées'
+                : notifPermission === 'denied'
+                ? 'Bloquées'
+                : 'Non activées'}
+            </span>
+          </div>
+
+          <p className="text-xs text-gray-500 leading-relaxed">
+            Recevez des alertes lors de nouveaux messages de la famille ou pour les rappels de rendez-vous de l'agenda.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+            {notifPermission !== 'granted' ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  const perm = await requestNotificationPermission();
+                  setNotifPermission(perm);
+                  if (perm === 'granted') {
+                    sendLocalNotification('Notifications activées ! 🎉', {
+                      body: 'Vous recevrez les alertes de nouveaux messages et d’agenda.',
+                    });
+                  }
+                }}
+                className="py-2 px-3 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <BellRing className="w-4 h-4" />
+                <span>Activer les notifications sur cet appareil</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  sendLocalNotification('Test de notification Dar 🔔', {
+                    body: 'Ceci est un test de notification réussi !',
+                  });
+                  setTestSent(true);
+                  setTimeout(() => setTestSent(false), 2500);
+                }}
+                className="py-2 px-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-semibold transition flex items-center justify-center gap-1.5"
+              >
+                {testSent ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span className="text-emerald-700">Notification envoyée !</span>
+                  </>
+                ) : (
+                  <>
+                    <BellRing className="w-4 h-4 text-primary-600" />
+                    <span>Envoyer une notification test</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Statut Stockage */}

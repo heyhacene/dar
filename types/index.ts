@@ -3,7 +3,7 @@ export interface Ingredient {
   name: string;
   quantity: number;
   unit: string;
-  category?: 'fruits_legumes' | 'viandes_poissons' | 'epicerie' | 'frais_cremerie' | 'boulangerie' | 'boissons' | 'autres';
+  category?: 'fruits_legumes' | 'viandes_poissons' | 'epicerie' | 'frais_cremerie' | 'boulangerie' | 'boissons' | 'hygiene' | 'autres';
 }
 
 export interface Recipe {

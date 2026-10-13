@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dar-v7';
+const CACHE_NAME = 'dar-v9';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -22,5 +22,24 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// Clic sur une notification : ouvre ou ramène l'application au premier plan
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = (event.notification.data && event.notification.data.url) || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(urlToOpen) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(urlToOpen);
+      }
+    })
   );
 });

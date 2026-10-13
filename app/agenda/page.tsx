@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
-import { supabase, isSupabaseConfigured, FamilyEvent } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured, FamilyEvent, Profile } from '@/lib/supabase';
 import {
   Calendar as CalendarIcon,
   Plus,
@@ -16,6 +16,8 @@ import {
   CalendarRange,
   Sun,
   X,
+  Users,
+  User,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
@@ -47,7 +49,7 @@ function isSameDay(d1: Date, d2: Date) {
 function getStartOfWeek(d: Date) {
   const date = new Date(d);
   const day = date.getDay();
-  const diff = (day === 0 ? -6 : 1) - day; // Lundi est le 1er jour
+  const diff = (day === 0 ? -6 : 1) - day;
   date.setDate(date.getDate() + diff);
   date.setHours(0, 0, 0, 0);
   return date;
@@ -58,6 +60,31 @@ function toLocalDateString(d: Date) {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// Helpers pour l'assignation des membres encodée dans la description
+function parseEventMembers(description?: string | null): string[] {
+  if (!description) return [];
+  const match = description.match(/<!--members:(\[.*?\])-->/);
+  if (match) {
+    try {
+      return JSON.parse(match[1]);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function cleanEventDescription(description?: string | null): string {
+  if (!description) return '';
+  return description.replace(/<!--members:\[.*?\]-->/g, '').trim();
+}
+
+function buildEventDescription(cleanDesc: string, memberIds: string[]): string {
+  const meta = memberIds.length > 0 ? `<!--members:${JSON.stringify(memberIds)}-->` : '';
+  const trimmed = cleanDesc.trim();
+  return meta ? `${meta} ${trimmed}`.trim() : trimmed;
 }
 
 export default function AgendaPage() {
@@ -73,6 +100,11 @@ export default function AgendaPage() {
   const [events, setEvents] = useState<FamilyEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Profils pour assignation et filtrage
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profilesMap, setProfilesMap] = useState<Record<string, Profile>>({});
+  const [selectedMemberFilter, setSelectedMemberFilter] = useState<string | null>(null);
+
   // Vue active (Jour / Semaine / Mois / Année)
   const [viewMode, setViewMode] = useState<CalendarViewMode>('mois');
 
@@ -87,6 +119,24 @@ export default function AgendaPage() {
   const [startTimeStr, setStartTimeStr] = useState('10:00');
   const [allDay, setAllDay] = useState(true);
   const [category, setCategory] = useState<FamilyEvent['category']>('famille');
+  const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
+
+  // Charger les profils de la famille
+  useEffect(() => {
+    async function loadProfiles() {
+      if (!isSupabaseConfigured()) return;
+      const { data } = await supabase.from('profiles').select('*').eq('status', 'approved');
+      if (data) {
+        setProfiles(data);
+        const map: Record<string, Profile> = {};
+        data.forEach((p) => {
+          map[p.id] = p;
+        });
+        setProfilesMap(map);
+      }
+    }
+    loadProfiles();
+  }, []);
 
   // Charger les événements
   async function loadEvents() {
@@ -140,6 +190,7 @@ export default function AgendaPage() {
     setDescription('');
     setAllDay(true);
     setCategory('famille');
+    setAssignedMemberIds(user ? [user.id] : []);
     setShowAddModal(true);
   }
 
@@ -154,10 +205,11 @@ export default function AgendaPage() {
         : new Date(`${startDateStr}T${startTimeStr}:00`).toISOString();
 
       const catObj = CATEGORIES.find((c) => c.key === category);
+      const fullDescription = buildEventDescription(description, assignedMemberIds);
 
       const { error } = await supabase.from('events').insert({
         title: title.trim(),
-        description: description.trim() || null,
+        description: fullDescription || null,
         start_date: fullStartDate,
         all_day: allDay,
         category,
@@ -229,9 +281,21 @@ export default function AgendaPage() {
     return String(selectedDate.getFullYear());
   }, [viewMode, selectedDate]);
 
+  // Événements filtrés selon le membre sélectionné
+  const filteredEvents = useMemo(() => {
+    if (!selectedMemberFilter) return events;
+    return events.filter((e) => {
+      const members = parseEventMembers(e.description);
+      if (members.length > 0) {
+        return members.includes(selectedMemberFilter);
+      }
+      return e.created_by === selectedMemberFilter;
+    });
+  }, [events, selectedMemberFilter]);
+
   // Événements pour un jour précis
   function getEventsForDay(d: Date) {
-    return events.filter((e) => {
+    return filteredEvents.filter((e) => {
       const evtDate = new Date(e.start_date);
       return isSameDay(evtDate, d);
     });
@@ -244,13 +308,11 @@ export default function AgendaPage() {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
 
-    // Déterminer le décalage (lundi = 0, ..., dimanche = 6)
     let startDayOfWeek = firstDay.getDay() - 1;
     if (startDayOfWeek === -1) startDayOfWeek = 6;
 
     const days: { date: Date; currentMonth: boolean }[] = [];
 
-    // Jours du mois précédent
     for (let i = startDayOfWeek - 1; i >= 0; i--) {
       days.push({
         date: new Date(year, month, -i),
@@ -258,7 +320,6 @@ export default function AgendaPage() {
       });
     }
 
-    // Jours du mois courant
     for (let i = 1; i <= lastDay.getDate(); i++) {
       days.push({
         date: new Date(year, month, i),
@@ -266,7 +327,6 @@ export default function AgendaPage() {
       });
     }
 
-    // Compléter pour avoir des multiples de 7
     const remaining = 7 - (days.length % 7);
     if (remaining < 7) {
       for (let i = 1; i <= remaining; i++) {
@@ -295,22 +355,24 @@ export default function AgendaPage() {
   // Événements du jour sélectionné
   const selectedDayEvents = useMemo(() => {
     return getEventsForDay(selectedDate);
-  }, [selectedDate, events]);
+  }, [selectedDate, filteredEvents]);
 
   const today = new Date();
 
   return (
-    <div className="pb-32">
+    <div className="pb-32 bg-gray-50 dark:bg-slate-900 min-h-screen">
       <Header title="Agenda Familial" />
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-w-lg mx-auto">
         {/* SÉLECTEUR DE VUES (Jour / Semaine / Mois / Année) */}
         <div className="flex items-center justify-between gap-2">
-          <div className="grid grid-cols-4 p-1 bg-gray-100 rounded-2xl text-xs font-bold flex-1 shadow-xs">
+          <div className="grid grid-cols-4 p-1 bg-gray-200/70 dark:bg-slate-800 rounded-2xl text-xs font-bold flex-1 shadow-xs">
             <button
               onClick={() => setViewMode('jour')}
               className={`py-2 rounded-xl transition ${
-                viewMode === 'jour' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                viewMode === 'jour'
+                  ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               Jour
@@ -318,7 +380,9 @@ export default function AgendaPage() {
             <button
               onClick={() => setViewMode('semaine')}
               className={`py-2 rounded-xl transition ${
-                viewMode === 'semaine' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                viewMode === 'semaine'
+                  ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               Semaine
@@ -326,7 +390,9 @@ export default function AgendaPage() {
             <button
               onClick={() => setViewMode('mois')}
               className={`py-2 rounded-xl transition ${
-                viewMode === 'mois' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                viewMode === 'mois'
+                  ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               Mois
@@ -334,7 +400,9 @@ export default function AgendaPage() {
             <button
               onClick={() => setViewMode('annee')}
               className={`py-2 rounded-xl transition ${
-                viewMode === 'annee' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500 hover:text-gray-900'
+                viewMode === 'annee'
+                  ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
               }`}
             >
               Année
@@ -350,23 +418,59 @@ export default function AgendaPage() {
           </button>
         </div>
 
+        {/* FILTRE PAR MEMBRE DE LA FAMILLE */}
+        {profiles.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+            <span className="text-[11px] font-bold text-gray-400 dark:text-slate-500 whitespace-nowrap mr-1">
+              Filtre :
+            </span>
+            <button
+              onClick={() => setSelectedMemberFilter(null)}
+              className={`px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap text-xs shadow-2xs ${
+                selectedMemberFilter === null
+                  ? 'bg-primary-600 text-white shadow-xs'
+                  : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'
+              }`}
+            >
+              👨‍👩‍👧‍👦 Tous ({events.length})
+            </button>
+            {profiles.map((p) => {
+              const isSelected = selectedMemberFilter === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedMemberFilter(isSelected ? null : p.id)}
+                  className={`px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap text-xs flex items-center gap-1.5 shadow-2xs ${
+                    isSelected
+                      ? 'bg-primary-600 text-white shadow-xs'
+                      : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-orange-400" />
+                  <span>{p.full_name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* BARRE DE NAVIGATION TEMPORELLE */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-3 shadow-xs flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-3 shadow-xs flex items-center justify-between">
           <button
             onClick={() => handleNavigate(-1)}
-            className="p-2 hover:bg-gray-100 rounded-xl transition text-gray-600"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition text-gray-600 dark:text-gray-300"
             title="Précédent"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
 
           <div className="flex items-center gap-2 text-center">
-            <h2 className="font-bold text-sm sm:text-base text-gray-900 capitalize">
+            <h2 className="font-bold text-sm sm:text-base text-gray-900 dark:text-white capitalize">
               {headerTitle}
             </h2>
             <button
               onClick={handleGoToday}
-              className="text-[10px] font-bold px-2 py-0.5 bg-orange-100 text-primary-700 rounded-lg hover:bg-orange-200 transition"
+              className="text-[10px] font-bold px-2 py-0.5 bg-orange-100 dark:bg-primary-950/70 text-primary-700 dark:text-primary-300 rounded-lg hover:bg-orange-200 transition"
               title="Aller à aujourd'hui"
             >
               Aujourd'hui
@@ -375,7 +479,7 @@ export default function AgendaPage() {
 
           <button
             onClick={() => handleNavigate(1)}
-            className="p-2 hover:bg-gray-100 rounded-xl transition text-gray-600"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-xl transition text-gray-600 dark:text-gray-300"
             title="Suivant"
           >
             <ChevronRight className="w-5 h-5" />
@@ -387,11 +491,11 @@ export default function AgendaPage() {
         {/* ------------------------------------------------------------- */}
         {viewMode === 'mois' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-3xl border border-gray-100 p-3 shadow-xs">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl border border-gray-100 dark:border-slate-700 p-3 shadow-xs">
               {/* Jours de la semaine */}
               <div className="grid grid-cols-7 mb-1 text-center">
                 {WEEK_DAYS.map((wd) => (
-                  <span key={wd} className="text-[11px] font-bold text-gray-400 py-1">
+                  <span key={wd} className="text-[11px] font-bold text-gray-400 dark:text-slate-500 py-1">
                     {wd}
                   </span>
                 ))}
@@ -411,15 +515,15 @@ export default function AgendaPage() {
                       onClick={() => setSelectedDate(date)}
                       className={`min-h-[46px] rounded-2xl p-1 flex flex-col items-center justify-between transition relative ${
                         isSelected
-                          ? 'bg-primary-50 border-2 border-primary-500 text-primary-900 font-bold'
+                          ? 'bg-primary-50 dark:bg-primary-950/50 border-2 border-primary-500 text-primary-900 dark:text-primary-200 font-bold'
                           : isToday
-                          ? 'bg-orange-100/70 text-primary-800 font-bold'
+                          ? 'bg-orange-100/70 dark:bg-slate-700 text-primary-800 dark:text-primary-300 font-bold'
                           : currentMonth
-                          ? 'text-gray-800 hover:bg-gray-50'
-                          : 'text-gray-300'
+                          ? 'text-gray-800 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-750'
+                          : 'text-gray-300 dark:text-slate-600'
                       }`}
                     >
-                      <span className={`text-xs ${isToday && !isSelected ? 'text-primary-700' : ''}`}>
+                      <span className={`text-xs ${isToday && !isSelected ? 'text-primary-700 dark:text-primary-400' : ''}`}>
                         {date.getDate()}
                       </span>
 
@@ -445,11 +549,11 @@ export default function AgendaPage() {
             </div>
 
             {/* DÉTAIL DU JOUR SÉLECTIONNÉ */}
-            <div className="bg-white rounded-3xl border border-gray-100 p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl border border-gray-100 dark:border-slate-700 p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-gray-100 dark:border-slate-700 pb-2">
                 <div className="flex items-center gap-2">
-                  <CalendarDays className="w-4 h-4 text-primary-600" />
-                  <h3 className="font-bold text-xs uppercase tracking-wider text-gray-700 capitalize">
+                  <CalendarDays className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-gray-700 dark:text-gray-300 capitalize">
                     {selectedDate.toLocaleDateString('fr-FR', {
                       weekday: 'long',
                       day: 'numeric',
@@ -459,18 +563,18 @@ export default function AgendaPage() {
                 </div>
                 <button
                   onClick={() => handleOpenAddModal(selectedDate)}
-                  className="text-xs font-bold text-primary-600 hover:text-primary-700"
+                  className="text-xs font-bold text-primary-600 dark:text-primary-400 hover:text-primary-700"
                 >
                   + Ajouter un événement
                 </button>
               </div>
 
               {selectedDayEvents.length === 0 ? (
-                <div className="py-6 text-center text-xs text-gray-400 space-y-1">
+                <div className="py-6 text-center text-xs text-gray-400 dark:text-slate-500 space-y-1">
                   <p>Aucun événement prévu pour ce jour.</p>
                   <button
                     onClick={() => handleOpenAddModal(selectedDate)}
-                    className="text-primary-600 font-semibold underline text-xs"
+                    className="text-primary-600 dark:text-primary-400 font-semibold underline text-xs"
                   >
                     Ajouter un rendez-vous ou une note
                   </button>
@@ -484,28 +588,48 @@ export default function AgendaPage() {
                       : dateObj.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     const catInfo = CATEGORIES.find((c) => c.key === evt.category) || CATEGORIES[0];
                     const canDelete = isAdmin || evt.created_by === user?.id;
+                    const assignedIds = parseEventMembers(evt.description);
+                    const cleanDesc = cleanEventDescription(evt.description);
 
                     return (
                       <div
                         key={evt.id}
-                        className="p-3 rounded-2xl border border-gray-100 flex items-center justify-between hover:border-gray-200 transition shadow-xs"
+                        className="p-3 rounded-2xl border border-gray-100 dark:border-slate-700 flex items-start justify-between hover:border-gray-200 dark:hover:border-slate-600 transition shadow-xs bg-white dark:bg-slate-800"
                       >
                         <div className="flex-1 min-w-0 pr-2">
                           <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full ${catInfo.dot}`} />
-                            <h4 className="font-bold text-xs text-gray-900 truncate">{evt.title}</h4>
+                            <h4 className="font-bold text-xs text-gray-900 dark:text-white truncate">{evt.title}</h4>
                           </div>
-                          <div className="flex items-center gap-2 mt-1 pl-4">
+                          <div className="flex items-center gap-2 mt-1 pl-4 flex-wrap">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${catInfo.color}`}>
                               {catInfo.label}
                             </span>
-                            <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                            <span className="text-[10px] text-gray-400 dark:text-slate-400 flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {timeStr}
                             </span>
                           </div>
-                          {evt.description && (
-                            <p className="text-[11px] text-gray-500 mt-1 pl-4 truncate">{evt.description}</p>
+
+                          {/* Membres assignés */}
+                          {assignedIds.length > 0 && (
+                            <div className="flex items-center gap-1 flex-wrap mt-1.5 pl-4">
+                              {assignedIds.map((uid) => {
+                                const p = profilesMap[uid];
+                                return (
+                                  <span
+                                    key={uid}
+                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-orange-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300 border border-orange-200/80 dark:border-primary-800"
+                                  >
+                                    👤 {p?.full_name || 'Membre'}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {cleanDesc && (
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 pl-4 truncate">{cleanDesc}</p>
                           )}
                         </div>
 
@@ -541,17 +665,19 @@ export default function AgendaPage() {
               return (
                 <div
                   key={dayDate.toISOString()}
-                  className={`bg-white rounded-2xl border p-3.5 shadow-xs transition ${
-                    isToday ? 'border-primary-300 ring-1 ring-primary-100' : 'border-gray-100'
+                  className={`bg-white dark:bg-slate-800 rounded-2xl border p-3.5 shadow-xs transition ${
+                    isToday
+                      ? 'border-primary-300 dark:border-primary-600 ring-1 ring-primary-100 dark:ring-primary-900'
+                      : 'border-gray-100 dark:border-slate-700'
                   }`}
                 >
-                  <div className="flex items-center justify-between pb-2 border-b border-gray-50">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-50 dark:border-slate-700">
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold text-xs capitalize ${isToday ? 'text-primary-700' : 'text-gray-900'}`}>
+                      <span className={`font-bold text-xs capitalize ${isToday ? 'text-primary-700 dark:text-primary-400' : 'text-gray-900 dark:text-white'}`}>
                         {dayName} {dayNum} {monthShort}
                       </span>
                       {isToday && (
-                        <span className="px-1.5 py-0.2 rounded-md bg-orange-100 text-primary-700 text-[10px] font-bold">
+                        <span className="px-1.5 py-0.2 rounded-md bg-orange-100 dark:bg-primary-950/70 text-primary-700 dark:text-primary-300 text-[10px] font-bold">
                           Aujourd'hui
                         </span>
                       )}
@@ -559,7 +685,7 @@ export default function AgendaPage() {
 
                     <button
                       onClick={() => handleOpenAddModal(dayDate)}
-                      className="p-1 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-50"
+                      className="p-1 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
                       title="Ajouter pour ce jour"
                     >
                       <Plus className="w-4 h-4" />
@@ -568,7 +694,7 @@ export default function AgendaPage() {
 
                   <div className="pt-2">
                     {dayEvts.length === 0 ? (
-                      <p className="text-[11px] text-gray-400 italic">Rien de prévu</p>
+                      <p className="text-[11px] text-gray-400 dark:text-slate-500 italic">Rien de prévu</p>
                     ) : (
                       <div className="space-y-1.5">
                         {dayEvts.map((evt) => {
@@ -578,16 +704,32 @@ export default function AgendaPage() {
                             : dateObj.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                           const catInfo = CATEGORIES.find((c) => c.key === evt.category) || CATEGORIES[0];
                           const canDelete = isAdmin || evt.created_by === user?.id;
+                          const assignedIds = parseEventMembers(evt.description);
 
                           return (
                             <div
                               key={evt.id}
-                              className="flex items-center justify-between p-2 rounded-xl bg-gray-50/70 border border-gray-100"
+                              className="flex items-center justify-between p-2 rounded-xl bg-gray-50/70 dark:bg-slate-750 border border-gray-100 dark:border-slate-700"
                             >
-                              <div className="flex items-center gap-2 min-w-0 pr-2">
+                              <div className="flex items-center gap-2 min-w-0 pr-2 flex-wrap">
                                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${catInfo.dot}`} />
-                                <span className="text-xs font-bold text-gray-900 truncate">{evt.title}</span>
-                                <span className="text-[10px] text-gray-400 whitespace-nowrap">({timeStr})</span>
+                                <span className="text-xs font-bold text-gray-900 dark:text-white truncate">{evt.title}</span>
+                                <span className="text-[10px] text-gray-400 dark:text-slate-400 whitespace-nowrap">({timeStr})</span>
+                                {assignedIds.length > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    {assignedIds.map((uid) => {
+                                      const p = profilesMap[uid];
+                                      return (
+                                        <span
+                                          key={uid}
+                                          className="text-[8px] font-bold px-1 py-0.2 bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded border border-gray-200 dark:border-slate-600"
+                                        >
+                                          {p?.full_name?.slice(0, 2).toUpperCase() || 'M'}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                               {canDelete && (
                                 <button
@@ -614,13 +756,13 @@ export default function AgendaPage() {
         {/* ------------------------------------------------------------- */}
         {viewMode === 'jour' && (
           <div className="space-y-4">
-            <div className="bg-white rounded-3xl border border-gray-100 p-5 shadow-xs space-y-4">
+            <div className="bg-white dark:bg-slate-800 rounded-3xl border border-gray-100 dark:border-slate-700 p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900 capitalize">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white capitalize">
                     {selectedDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
                   </h3>
-                  <p className="text-xs text-gray-400">{selectedDayEvents.length} événement(s) programmé(s)</p>
+                  <p className="text-xs text-gray-400 dark:text-slate-500">{selectedDayEvents.length} événement(s) programmé(s)</p>
                 </div>
                 <button
                   onClick={() => handleOpenAddModal(selectedDate)}
@@ -632,9 +774,9 @@ export default function AgendaPage() {
               </div>
 
               {selectedDayEvents.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 space-y-2">
+                <div className="text-center py-12 text-gray-400 dark:text-slate-500 space-y-2">
                   <Sun className="w-10 h-10 text-amber-300 mx-auto animate-pulse" />
-                  <p className="text-xs font-medium">Journée libre, aucun engagement familial noté.</p>
+                  <p className="text-xs font-medium">Journée libre, aucun engagement noté.</p>
                 </div>
               ) : (
                 <div className="space-y-3 pt-2">
@@ -645,25 +787,46 @@ export default function AgendaPage() {
                       : dateObj.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                     const catInfo = CATEGORIES.find((c) => c.key === evt.category) || CATEGORIES[0];
                     const canDelete = isAdmin || evt.created_by === user?.id;
+                    const assignedIds = parseEventMembers(evt.description);
+                    const cleanDesc = cleanEventDescription(evt.description);
 
                     return (
                       <div
                         key={evt.id}
-                        className="p-4 rounded-2xl border border-gray-100 shadow-xs flex items-start justify-between bg-gradient-to-r from-white to-orange-50/20"
+                        className="p-4 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-xs flex items-start justify-between bg-gradient-to-r from-white to-orange-50/20 dark:from-slate-800 dark:to-slate-800/80"
                       >
                         <div className="space-y-1.5 flex-1 min-w-0 pr-2">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${catInfo.color}`}>
                               {catInfo.label}
                             </span>
-                            <span className="text-xs text-gray-500 font-semibold flex items-center gap-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-semibold flex items-center gap-1">
                               <Clock className="w-3.5 h-3.5" />
                               {timeStr}
                             </span>
                           </div>
-                          <h4 className="text-sm font-bold text-gray-900">{evt.title}</h4>
-                          {evt.description && (
-                            <p className="text-xs text-gray-600 leading-relaxed">{evt.description}</p>
+                          <h4 className="text-sm font-bold text-gray-900 dark:text-white">{evt.title}</h4>
+
+                          {/* Membres assignés */}
+                          {assignedIds.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                              {assignedIds.map((uid) => {
+                                const p = profilesMap[uid];
+                                return (
+                                  <span
+                                    key={uid}
+                                    className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-primary-950/50 text-primary-800 dark:text-primary-300 border border-orange-200 dark:border-primary-800 flex items-center gap-1"
+                                  >
+                                    <User className="w-3 h-3" />
+                                    <span>{p?.full_name || 'Membre'}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {cleanDesc && (
+                            <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed pt-1">{cleanDesc}</p>
                           )}
                         </div>
 
@@ -695,8 +858,7 @@ export default function AgendaPage() {
                 const firstDay = new Date(year, monthIndex, 1);
                 const lastDay = new Date(year, monthIndex + 1, 0);
 
-                // Événements dans ce mois
-                const monthEvents = events.filter((e) => {
+                const monthEvents = filteredEvents.filter((e) => {
                   const d = new Date(e.start_date);
                   return d.getFullYear() === year && d.getMonth() === monthIndex;
                 });
@@ -709,23 +871,23 @@ export default function AgendaPage() {
                       setSelectedDate(new Date(year, monthIndex, 1));
                       setViewMode('mois');
                     }}
-                    className="bg-white rounded-2xl border border-gray-100 p-3 shadow-xs hover:border-primary-300 transition text-left flex flex-col justify-between min-h-[105px]"
+                    className="bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 p-3 shadow-xs hover:border-primary-300 dark:hover:border-primary-600 transition text-left flex flex-col justify-between min-h-[105px]"
                   >
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-xs text-gray-900">{monthName}</span>
+                        <span className="font-bold text-xs text-gray-900 dark:text-white">{monthName}</span>
                         {monthEvents.length > 0 && (
-                          <span className="px-1.5 py-0.2 rounded-md bg-orange-100 text-primary-700 text-[10px] font-bold">
+                          <span className="px-1.5 py-0.2 rounded-md bg-orange-100 dark:bg-primary-950/70 text-primary-700 dark:text-primary-300 text-[10px] font-bold">
                             {monthEvents.length}
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-gray-400">
+                      <p className="text-[10px] text-gray-400 dark:text-slate-500">
                         {lastDay.getDate()} jours
                       </p>
                     </div>
 
-                    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center justify-between text-[10px] text-primary-600 font-semibold">
+                    <div className="mt-2 pt-2 border-t border-gray-50 dark:border-slate-700 flex items-center justify-between text-[10px] text-primary-600 dark:text-primary-400 font-semibold">
                       <span>Voir le mois</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </div>
@@ -737,16 +899,16 @@ export default function AgendaPage() {
         )}
       </div>
 
-      {/* MODAL AJOUT D'ÉVÉNEMENT (AVEC FOOTER TOUJOURS ACCESSIBLE SUR MOBILE) */}
+      {/* MODAL AJOUT D'ÉVÉNEMENT */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
-              <h3 className="font-bold text-base text-gray-900">Ajouter à l'agenda</h3>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between flex-shrink-0">
+              <h3 className="font-bold text-base text-gray-900 dark:text-white">Ajouter à l'agenda</h3>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-700 rounded-full"
+                className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -755,7 +917,7 @@ export default function AgendaPage() {
             <form onSubmit={handleAddEvent} className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div className="p-4 space-y-3.5 overflow-y-auto flex-1">
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+                  <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
                     Titre de l'événement
                   </label>
                   <input
@@ -764,12 +926,62 @@ export default function AgendaPage() {
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Ex: RDV Dentiste Lina, Anniversaire..."
-                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-gray-50"
+                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none bg-gray-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                   />
                 </div>
 
+                {/* MEMBRES ASSIGNÉS */}
+                {profiles.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Membres concernés
+                    </label>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (assignedMemberIds.length === profiles.length) {
+                            setAssignedMemberIds([]);
+                          } else {
+                            setAssignedMemberIds(profiles.map((p) => p.id));
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition ${
+                          assignedMemberIds.length === profiles.length && profiles.length > 0
+                            ? 'bg-orange-100 border-primary-500 text-primary-800 dark:bg-primary-950/60 dark:text-primary-300'
+                            : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        👨‍👩‍👧‍👦 Toute la famille
+                      </button>
+                      {profiles.map((p) => {
+                        const isAssigned = assignedMemberIds.includes(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setAssignedMemberIds((prev) =>
+                                isAssigned ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                              );
+                            }}
+                            className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 ${
+                              isAssigned
+                                ? 'bg-primary-50 border-primary-500 text-primary-700 dark:bg-primary-950/40 dark:text-primary-300'
+                                : 'border-gray-200 dark:border-slate-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            <span>{p.full_name}</span>
+                            {isAssigned && <Check className="w-3 h-3 text-primary-600 dark:text-primary-400" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+                  <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
                     Catégorie
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -780,12 +992,12 @@ export default function AgendaPage() {
                         onClick={() => setCategory(cat.key as any)}
                         className={`p-2 rounded-xl text-[11px] font-bold border text-left transition flex items-center justify-between ${
                           category === cat.key
-                            ? 'border-primary-500 bg-orange-50 text-primary-800'
-                            : 'border-gray-100 text-gray-600 hover:bg-gray-50'
+                            ? 'border-primary-500 bg-orange-50 dark:bg-primary-950/40 text-primary-800 dark:text-primary-300'
+                            : 'border-gray-100 dark:border-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700'
                         }`}
                       >
                         <span>{cat.label}</span>
-                        {category === cat.key && <Check className="w-3 h-3 text-primary-600" />}
+                        {category === cat.key && <Check className="w-3 h-3 text-primary-600 dark:text-primary-400" />}
                       </button>
                     ))}
                   </div>
@@ -793,23 +1005,23 @@ export default function AgendaPage() {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-[11px] font-semibold text-gray-700 mb-1">Date</label>
+                    <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">Date</label>
                     <input
                       type="date"
                       required
                       value={startDateStr}
                       onChange={(e) => setStartDateStr(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50"
+                      className="w-full px-2.5 py-1.5 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                     />
                   </div>
                   {!allDay && (
                     <div>
-                      <label className="block text-[11px] font-semibold text-gray-700 mb-1">Heure</label>
+                      <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">Heure</label>
                       <input
                         type="time"
                         value={startTimeStr}
                         onChange={(e) => setStartTimeStr(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50"
+                        className="w-full px-2.5 py-1.5 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                       />
                     </div>
                   )}
@@ -823,13 +1035,13 @@ export default function AgendaPage() {
                     onChange={(e) => setAllDay(e.target.checked)}
                     className="rounded text-primary-600 focus:ring-primary-500"
                   />
-                  <label htmlFor="allDayCheck" className="text-xs text-gray-700 font-medium">
+                  <label htmlFor="allDayCheck" className="text-xs text-gray-700 dark:text-gray-300 font-medium">
                     Toute la journée
                   </label>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-700 mb-1">
+                  <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
                     Notes (optionnel)
                   </label>
                   <input
@@ -837,17 +1049,17 @@ export default function AgendaPage() {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Lieu, détails..."
-                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50"
+                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 bg-gray-50 dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                   />
                 </div>
               </div>
 
-              {/* FOOTER TOUJOURS VISIBLE ET CLICABLE SUR MOBILE */}
-              <div className="p-3.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2 flex-shrink-0">
+              {/* FOOTER TOUJOURS VISIBLE ET CLICABLE */}
+              <div className="p-3.5 bg-gray-50 dark:bg-slate-750 border-t border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-100 transition"
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
                 >
                   Annuler
                 </button>
