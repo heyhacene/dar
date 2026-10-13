@@ -1,16 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import { Recipe } from '@/types';
-import { loadLocalData } from '@/lib/storage';
+import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import Link from 'next/link';
-import { Plus, Search, Clock, Users, ChefHat } from 'lucide-react';
+import { Plus, Search, Clock, Users, ChefHat, Wand2, X, AlertCircle, Share2, Sparkles } from 'lucide-react';
 
 export default function RecettesPage() {
+  const router = useRouter();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
+
+  // Modal d'import Cookidoo / Web
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [importInput, setImportInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const data = loadLocalData();
@@ -23,30 +31,97 @@ export default function RecettesPage() {
     return matchSearch && matchCategory;
   });
 
+  async function handleImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importInput.trim()) return;
+
+    setError(null);
+    setLoading(true);
+
+    try {
+      const isUrl = /^https?:\/\//i.test(importInput.trim());
+      const payload = isUrl ? { url: importInput.trim() } : { rawText: importInput.trim() };
+
+      const res = await fetch('/api/import-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.recipe) {
+        throw new Error(data.error || 'Impossible d’analyser cette recette.');
+      }
+
+      const imported = data.recipe;
+      const newRecipe: Recipe = {
+        id: `rec_${Date.now()}`,
+        title: imported.title || 'Recette Cookidoo',
+        category: imported.category || 'plat',
+        defaultServings: imported.defaultServings || 4,
+        prepTimeMinutes: imported.prepTimeMinutes || 15,
+        cookTimeMinutes: imported.cookTimeMinutes || 25,
+        imageUrl: imported.imageUrl,
+        ingredients: imported.ingredients || [],
+        steps: imported.steps || [],
+        notes: imported.notes || 'Importé depuis Cookidoo / Thermomix',
+        updatedAt: new Date().toISOString(),
+      };
+
+      const currentData = loadLocalData();
+      const updated = {
+        ...currentData,
+        recipes: [newRecipe, ...currentData.recipes],
+      };
+
+      saveLocalData(updated);
+      syncWithGoogle(updated);
+      setRecipes(updated.recipes);
+      setIsModalOpen(false);
+      setImportInput('');
+
+      // Rediriger immédiatement vers la nouvelle fiche recette !
+      router.push(`/recettes/${newRecipe.id}`);
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de l’importation.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div>
       <Header title="Carnet de Recettes" />
 
       <div className="p-4 space-y-4">
-        {/* Recherche et Ajout */}
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Rechercher une recette..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
-            />
-          </div>
+        {/* Barre de boutons d'action rapide */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex-1 py-2.5 px-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl text-xs shadow-xs flex items-center justify-center gap-2 transition"
+          >
+            <Wand2 className="w-4 h-4" />
+            <span>Importer Cookidoo / Web</span>
+          </button>
           <Link
             href="/recettes/nouvelle"
-            className="p-2.5 bg-primary-600 text-white rounded-xl shadow-sm hover:bg-primary-700 transition"
-            title="Ajouter une recette"
+            className="py-2.5 px-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4 text-primary-600" />
+            <span>Créer manuellement</span>
           </Link>
+        </div>
+
+        {/* Barre de recherche */}
+        <div className="relative">
+          <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Rechercher une recette..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
+          />
         </div>
 
         {/* Filtres par catégorie */}
@@ -118,11 +193,90 @@ export default function RecettesPage() {
           {filtered.length === 0 && (
             <div className="text-center py-12 text-gray-400">
               <ChefHat className="w-12 h-12 mx-auto stroke-1 mb-2" />
-              <p className="text-sm">Aucune recette trouvée</p>
+              <p className="text-sm font-semibold text-gray-600">Aucune recette trouvée</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Importez une recette Cookidoo ou créez-en une nouvelle avec le bouton ci-dessus.
+              </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* MODALE D'IMPORTATION COOKIDOO ULTRA-SIMPLE */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <Wand2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Importer depuis Cookidoo</h3>
+                  <p className="text-[11px] text-gray-500">Thermomix ou n'importe quel site web</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleImport} className="p-5 space-y-4 overflow-y-auto">
+              {/* Tutoriel Cookidoo pas-à-pas */}
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-2xl text-xs text-emerald-950 space-y-2">
+                <p className="font-bold flex items-center gap-1.5 text-emerald-900">
+                  <Share2 className="w-4 h-4" /> Comment faire depuis l'application Cookidoo :
+                </p>
+                <ol className="list-decimal pl-4 space-y-1 text-emerald-900/90 leading-relaxed">
+                  <li>Ouvrez votre recette sur l'application <strong>Cookidoo</strong>.</li>
+                  <li>Touchez l'icône <strong>Partager</strong> <em>(les 3 points ou la flèche en haut de l'écran)</em>.</li>
+                  <li>Touchez <strong>« Copier le lien »</strong> <em>(ou partagez le texte vers Notes/WhatsApp)</em>.</li>
+                  <li>Revenez ici et <strong>collez dans la case ci-dessous</strong> !</li>
+                </ol>
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2 text-red-700 text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">{error}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                  Collez le lien Cookidoo ou le texte copié ici :
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Exemple : https://cookidoo.fr/recipes/recipe/fr-FR/r... ou collez le texte de la recette"
+                  value={importInput}
+                  onChange={(e) => setImportInput(e.target.value)}
+                  className="w-full p-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-mono"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <span>Analyse et découpage en cours...</span>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Importer dans mon carnet</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
