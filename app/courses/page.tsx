@@ -6,6 +6,7 @@ import { AppData, ShoppingItem } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import { Check, Plus, ShoppingBag, Trash2, Info, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
+import CuisineTabs from '@/components/CuisineTabs';
 
 export default function CoursesPage() {
   const [data, setData] = useState<AppData | null>(null);
@@ -161,6 +162,7 @@ export default function CoursesPage() {
   return (
     <div className="pb-32">
       <Header title="Liste de Courses" onRefresh={() => syncWithGoogle(data).then(setData)} />
+      <CuisineTabs />
 
       <div className="p-4 space-y-4">
         {/* Sélecteur de période pour les courses (2 semaines) */}

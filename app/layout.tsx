@@ -21,6 +21,8 @@ export const viewport: Viewport = {
   themeColor: '#ee7318',
 };
 
+import { AuthProvider } from '@/lib/authContext';
+
 export default function RootLayout({
   children,
 }: {
@@ -33,8 +35,10 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon.svg" />
       </head>
       <body className="h-full flex flex-col max-w-lg mx-auto bg-white shadow-xl min-h-screen relative pb-36">
-        <main className="flex-1">{children}</main>
-        <BottomNav />
+        <AuthProvider>
+          <main className="flex-1">{children}</main>
+          <BottomNav />
+        </AuthProvider>
       </body>
     </html>
   );

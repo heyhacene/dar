@@ -7,6 +7,7 @@ import { Recipe } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import Link from 'next/link';
 import { Plus, Search, Clock, Users, ChefHat, Wand2, X, AlertCircle, Share2, Sparkles } from 'lucide-react';
+import CuisineTabs from '@/components/CuisineTabs';
 
 export default function RecettesPage() {
   const router = useRouter();
@@ -92,6 +93,7 @@ export default function RecettesPage() {
   return (
     <div className="pb-32">
       <Header title="Carnet de Recettes" />
+      <CuisineTabs />
 
       <div className="p-4 space-y-4">
         {/* BANNIÈRE COOKIDOO ULTRA-VISIBLE */}

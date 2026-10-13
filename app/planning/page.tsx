@@ -7,6 +7,7 @@ import { AppData, DayOfWeek, MealType, PlannedMeal, WeekSelection } from '@/type
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import { Plus, Users, Trash2, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
+import CuisineTabs from '@/components/CuisineTabs';
 
 const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: 'lundi', label: 'Lundi' },
@@ -116,6 +117,7 @@ export default function PlanningPage() {
   return (
     <div className="pb-32">
       <Header title="Planning des repas" onRefresh={() => syncWithGoogle(data).then(setData)} />
+      <CuisineTabs />
 
       <div className="p-4 space-y-4">
         {/* SÉLECTEUR 2 SEMAINES */}

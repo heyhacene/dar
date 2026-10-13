@@ -2,76 +2,247 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Clock, CheckCircle2 } from 'lucide-react';
 import Logo from '@/components/Logo';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { useAuth } from '@/lib/authContext';
 
 export default function LoginPage() {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { refreshProfile, user, isApproved } = useAuth();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
 
-  async function handleLogin(e: React.FormEvent) {
+  useEffect(() => {
+    if (user && isApproved) {
+      router.push('/messages');
+    }
+  }, [user, isApproved, router]);
+  
+  // Champs formulaire
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  
+  // États de feedback
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingNotice, setPendingNotice] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const supabaseReady = isSupabaseConfigured();
+
+  async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
+    setError(null);
+    setSuccessMsg(null);
+    setPendingNotice(false);
     setLoading(true);
 
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
+    if (!supabaseReady) {
+      // Mode de secours si Supabase n'est pas encore configuré
+      if (password === 'famille2025' || password === 'dar') {
         router.push('/planning');
-        router.refresh();
-      } else {
-        setError(data.error || 'Mot de passe incorrect');
+        return;
       }
-    } catch (err) {
-      setError('Erreur de connexion. Vérifiez votre réseau.');
+      setError("Supabase n'est pas encore configuré. Renseignez NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY sur Vercel.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (mode === 'register') {
+        // Demande d'inscription
+        const { data, error: signUpErr } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: { full_name: fullName.trim() },
+          },
+        });
+
+        if (signUpErr) throw signUpErr;
+
+        if (data.user) {
+          // Vérifier son profil créé par le trigger SQL
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('status, role')
+            .eq('id', data.user.id)
+            .single();
+
+          if (prof?.status === 'approved') {
+            // C'est le tout premier utilisateur (Admin) !
+            await refreshProfile();
+            router.push('/messages');
+          } else {
+            // Membre standard en attente
+            setPendingNotice(true);
+            setSuccessMsg("Votre inscription a été envoyée ! Un administrateur doit valider votre accès.");
+          }
+        }
+      } else {
+        // Connexion
+        const { data, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (signInErr) throw signInErr;
+
+        if (data.user) {
+          // Vérification du statut du membre
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles')
+            .select('status, role')
+            .eq('id', data.user.id)
+            .single();
+
+          if (prof?.status === 'pending') {
+            setPendingNotice(true);
+            setLoading(false);
+            return;
+          }
+
+          if (prof?.status === 'rejected') {
+            setError("Votre demande d'accès a été refusée par l'administrateur.");
+            await supabase.auth.signOut();
+            setLoading(false);
+            return;
+          }
+
+          await refreshProfile();
+          router.push('/messages');
+        }
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Une erreur est survenue lors de la connexion.');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-6 py-12 bg-gradient-to-b from-orange-50/50 to-white">
+    <div className="min-h-screen flex flex-col justify-center px-5 py-10 bg-gradient-to-b from-orange-50/50 via-white to-gray-50">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Logo className="w-16 h-16 mx-auto mb-4 shadow-lg shadow-orange-500/20" size={64} />
-        <h2 className="text-2xl font-black text-gray-900 tracking-tight">Dar</h2>
+        <Logo className="w-16 h-16 mx-auto mb-3 shadow-lg shadow-orange-500/20" size={64} />
+        <h1 className="text-2xl font-black text-gray-900 tracking-tight">Dar</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Entrez le mot de passe pour accéder à votre espace
+          L'espace partagé de notre famille
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 shadow-sm border border-gray-100 rounded-2xl">
-          <form onSubmit={handleLogin} className="space-y-4">
-            {error && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-100 flex items-center gap-2 text-red-700 text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-7 px-6 shadow-sm border border-gray-100 rounded-3xl">
+          {/* SÉLECTEUR CONNEXION / INSCRIPTION */}
+          <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-2xl mb-6 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => {
+                setMode('login');
+                setError(null);
+                setPendingNotice(false);
+              }}
+              className={`py-2 rounded-xl transition ${
+                mode === 'login' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              Se connecter
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMode('register');
+                setError(null);
+                setPendingNotice(false);
+              }}
+              className={`py-2 rounded-xl transition ${
+                mode === 'register' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              Créer un compte
+            </button>
+          </div>
+
+          {/* MESSAGE EN ATTENTE DE VALIDATION */}
+          {pendingNotice && (
+            <div className="mb-5 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-sm space-y-2">
+              <div className="flex items-center gap-2 font-bold text-amber-800">
+                <Clock className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                <span>Compte en attente de validation</span>
+              </div>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Votre compte a bien été créé ! Pour des raisons de sécurité familiale, un administrateur doit approuver votre accès. Vous pourrez vous connecter dès que l'approbation sera faite.
+              </p>
+            </div>
+          )}
+
+          {/* NOTIFICATION SUCCÈS */}
+          {successMsg && !pendingNotice && (
+            <div className="mb-5 p-3 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center gap-2 text-emerald-800 text-sm">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* ERREURS */}
+          {error && (
+            <div className="mb-5 p-3.5 rounded-2xl bg-red-50 border border-red-100 flex items-center gap-2 text-red-700 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAuth} className="space-y-4">
+            {mode === 'register' && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Prénom & Nom
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Ex: Sarah Otsmane"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50/50"
+                  />
+                </div>
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                Mot de passe d'accès
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Adresse email
               </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <Lock className="w-5 h-5" />
-                </div>
+                <Mail className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nom@exemple.com"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50/50"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Mot de passe personnel
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3.5 top-3.5 text-gray-400" />
                 <input
                   type="password"
+                  required
+                  minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Code secret de la maison"
-                  required
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm bg-gray-50/50"
+                  placeholder="Minimum 6 caractères"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 bg-gray-50/50"
                 />
               </div>
             </div>
@@ -79,12 +250,30 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 transition flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+              className="w-full mt-2 py-3 px-4 bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-bold rounded-xl shadow-md shadow-orange-500/20 transition flex items-center justify-center gap-2 text-sm disabled:opacity-50"
             >
-              {loading ? 'Connexion en cours...' : 'Accéder au carnet'}
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                'Veuillez patienter...'
+              ) : mode === 'login' ? (
+                <>
+                  <span>Connexion</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Demander l'accès à Dar</span>
+                </>
+              )}
             </button>
           </form>
+
+          {/* NOTE DE SÉCURITÉ */}
+          <div className="mt-5 pt-4 border-t border-gray-100 text-center">
+            <p className="text-[11px] text-gray-400">
+              Accès strictement réservé aux membres de la famille Otsmane.
+            </p>
+          </div>
         </div>
       </div>
     </div>
