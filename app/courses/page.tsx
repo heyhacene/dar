@@ -8,6 +8,9 @@ import { Check, Plus, ShoppingBag, Trash2, Info, CalendarDays } from 'lucide-rea
 import Link from 'next/link';
 import CuisineTabs from '@/components/CuisineTabs';
 
+// Préfixe des clés de `checkedItems` marquant un ingrédient du planning retiré de la liste
+const HIDDEN_PREFIX = 'hidden_';
+
 export default function CoursesPage() {
   const [data, setData] = useState<AppData | null>(null);
   const [newItemText, setNewItemText] = useState('');
@@ -58,6 +61,8 @@ export default function CoursesPage() {
 
     const list: ShoppingItem[] = [];
     map.forEach((item, key) => {
+      // Ingrédient retiré manuellement de la liste par l'utilisateur
+      if (data.checkedItems[`${HIDDEN_PREFIX}agg_${key}`]) return;
       list.push({
         id: `agg_${key}`,
         name: item.name,
@@ -118,30 +123,48 @@ export default function CoursesPage() {
     setNewItemText('');
   }
 
-  function handleDeleteCustomItem(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!data) return;
-    const updatedCustom = data.customShoppingItems.filter((i) => i.id !== id);
-    const updated: AppData = {
-      ...data,
-      customShoppingItems: updatedCustom,
-    };
+  function persist(updated: AppData) {
     setData(updated);
     saveLocalData(updated);
     syncWithGoogle(updated);
   }
 
+  function handleDeleteItem(item: ShoppingItem, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!data) return;
+    if (item.isCustom) {
+      persist({
+        ...data,
+        customShoppingItems: data.customShoppingItems.filter((i) => i.id !== item.id),
+      });
+    } else {
+      // Ingrédient issu du planning : on le masque de la liste
+      const updatedChecked = { ...data.checkedItems, [`${HIDDEN_PREFIX}${item.id}`]: true };
+      delete updatedChecked[item.id];
+      persist({ ...data, checkedItems: updatedChecked });
+    }
+  }
+
   function handleClearChecked() {
     if (!data) return;
     const updatedCustom = data.customShoppingItems.filter((i) => !i.checked);
-    const updated: AppData = {
-      ...data,
-      customShoppingItems: updatedCustom,
-      checkedItems: {},
-    };
-    setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    // Les ingrédients du planning cochés (visibles) sont masqués de la liste
+    const updatedChecked: Record<string, boolean> = { ...data.checkedItems };
+    aggregatedItems.forEach((i) => {
+      if (!i.checked) return;
+      delete updatedChecked[i.id];
+      updatedChecked[`${HIDDEN_PREFIX}${i.id}`] = true;
+    });
+    persist({ ...data, customShoppingItems: updatedCustom, checkedItems: updatedChecked });
+  }
+
+  function handleRestoreHidden() {
+    if (!data) return;
+    const updatedChecked: Record<string, boolean> = {};
+    Object.entries(data.checkedItems).forEach(([k, v]) => {
+      if (!k.startsWith(HIDDEN_PREFIX)) updatedChecked[k] = v;
+    });
+    persist({ ...data, checkedItems: updatedChecked });
   }
 
   function handleClearAllCustom() {
@@ -158,6 +181,9 @@ export default function CoursesPage() {
 
   const uncheckedCount = allItems.filter((i) => !i.checked).length;
   const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
+  const hiddenCount = Object.entries(data.checkedItems).filter(
+    ([k, v]) => k.startsWith(HIDDEN_PREFIX) && v
+  ).length;
 
   return (
     <div className="pb-32">
@@ -205,6 +231,15 @@ export default function CoursesPage() {
             </p>
           </div>
           <div className="flex items-center gap-1">
+            {hiddenCount > 0 && (
+              <button
+                onClick={handleRestoreHidden}
+                className="text-xs text-gray-500 hover:text-primary-700 font-semibold px-2 py-1.5 rounded-lg transition"
+                title="Remettre dans la liste les ingrédients du planning supprimés"
+              >
+                Restaurer ({hiddenCount})
+              </button>
+            )}
             {data.customShoppingItems.length > 0 && (
               <button
                 onClick={handleClearAllCustom}
@@ -301,15 +336,15 @@ export default function CoursesPage() {
                     {item.quantity} {item.unit}
                   </span>
                 )}
-                {item.isCustom && (
-                  <button
-                    onClick={(e) => handleDeleteCustomItem(item.id, e)}
-                    className="p-1 text-gray-400 hover:text-red-500 transition rounded-md"
-                    title="Supprimer cet article"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteItem(item, e)}
+                  className="p-2 -mr-1 text-gray-400 hover:text-red-500 hover:bg-red-50 transition rounded-lg"
+                  title="Supprimer cet article"
+                  aria-label={`Supprimer ${item.name}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))}

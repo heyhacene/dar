@@ -1,13 +1,16 @@
 'use client';
 
-import { LogOut, RefreshCw } from 'lucide-react';
+import { LogOut, Moon, RefreshCw, Sun, Settings } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import Link from 'next/link';
 import Logo from './Logo';
+import { useTheme } from '@/lib/theme';
 
 export default function Header({ title, onRefresh }: { title: string; onRefresh?: () => void }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const { isDark, toggle } = useTheme();
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -33,20 +36,40 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
         </div>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5">
         {onRefresh && (
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="p-2 text-gray-500 hover:text-primary-600 rounded-lg hover:bg-orange-50 transition"
+            className="p-2 text-gray-500 hover:text-primary-600 rounded-xl hover:bg-orange-50 transition"
             title="Synchroniser"
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-primary-600' : ''}`} />
           </button>
         )}
         <button
+          onClick={toggle}
+          className={`p-2 rounded-xl transition flex items-center gap-1.5 font-medium text-xs ${
+            isDark
+              ? 'bg-amber-400/15 text-amber-300 hover:bg-amber-400/25 border border-amber-400/30'
+              : 'bg-gray-100 text-gray-700 hover:bg-orange-50 hover:text-primary-600 border border-gray-200'
+          }`}
+          title={isDark ? 'Passer en mode clair' : 'Passer en mode sombre'}
+          aria-label={isDark ? 'Passer en mode clair' : 'Passer en mode sombre'}
+        >
+          {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+          <span className="hidden sm:inline">{isDark ? 'Clair' : 'Sombre'}</span>
+        </button>
+        <Link
+          href="/settings"
+          className="p-2 text-gray-500 hover:text-primary-600 rounded-xl hover:bg-orange-50 transition"
+          title="Paramètres & Apparence"
+        >
+          <Settings className="w-5 h-5" />
+        </Link>
+        <button
           onClick={handleLogout}
-          className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition"
+          className="p-2 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50 transition"
           title="Se déconnecter"
         >
           <LogOut className="w-5 h-5" />

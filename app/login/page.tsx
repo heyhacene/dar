@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Clock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Clock, CheckCircle2, Eye, EyeOff, Sun, Moon } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/authContext';
+import { useTheme } from '@/lib/theme';
 
 export default function LoginPage() {
   const router = useRouter();
   const { refreshProfile, user, isApproved } = useAuth();
+  const { isDark, toggle } = useTheme();
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
   useEffect(() => {
@@ -123,7 +125,24 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-5 py-10 bg-gradient-to-b from-orange-50/50 via-white to-gray-50">
+    <div className="min-h-screen flex flex-col justify-center px-5 py-10 bg-gradient-to-b from-orange-50/50 via-white to-gray-50 relative">
+      {/* BOUTON THÈME */}
+      <div className="absolute top-4 right-4">
+        <button
+          type="button"
+          onClick={toggle}
+          className={`p-2.5 rounded-2xl transition flex items-center gap-1.5 shadow-xs border ${
+            isDark
+              ? 'bg-gray-800 text-amber-300 border-gray-700 hover:bg-gray-700'
+              : 'bg-white text-gray-700 border-gray-200 hover:bg-orange-50 hover:text-primary-600'
+          }`}
+          title={isDark ? 'Passer en mode clair' : 'Passer en mode sombre'}
+          aria-label={isDark ? 'Passer en mode clair' : 'Passer en mode sombre'}
+        >
+          {isDark ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-indigo-600" />}
+        </button>
+      </div>
+
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <Logo className="w-16 h-16 mx-auto mb-3 shadow-lg shadow-orange-500/20" size={64} />
         <h1 className="text-2xl font-black text-gray-900 tracking-tight">Dar</h1>

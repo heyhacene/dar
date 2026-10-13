@@ -4,12 +4,15 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Profile } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useTheme } from '@/lib/theme';
 
 export default function FamillePage() {
   const router = useRouter();
   const { user, profile, isAdmin, signOut, loading: authLoading } = useAuth();
+  const { preference, setPreference } = useTheme();
 
   useEffect(() => {
     if (!authLoading && !user && isSupabaseConfigured()) {
@@ -195,6 +198,42 @@ export default function FamillePage() {
           >
             <LogOut className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* APPARENCE & MODE SOMBRE */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Palette className="w-5 h-5 text-primary-600" />
+              <h2 className="font-bold text-sm text-gray-900">Apparence & Mode sombre</h2>
+            </div>
+            <Link
+              href="/settings"
+              className="text-xs text-primary-600 hover:underline font-semibold flex items-center gap-1"
+            >
+              <SettingsIcon className="w-3.5 h-3.5" /> Paramètres
+            </Link>
+          </div>
+          <div className="grid grid-cols-3 p-1 bg-gray-100 rounded-2xl text-xs font-bold">
+            {(
+              [
+                { value: 'light', label: 'Clair', Icon: Sun },
+                { value: 'dark', label: 'Sombre', Icon: Moon },
+                { value: 'system', label: 'Auto', Icon: Monitor },
+              ] as const
+            ).map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setPreference(value)}
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  preference === value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <Icon className="w-4 h-4" /> {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* MESSAGES D'ACTION */}

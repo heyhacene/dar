@@ -93,12 +93,13 @@ function MessagesContent() {
   // Charger les messages et abonnement en temps réel quand une conversation est sélectionnée
   useEffect(() => {
     if (!activeConv || !isSupabaseConfigured()) return;
+    const convId = activeConv.id;
 
     async function fetchMessages() {
       const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .eq('conversation_id', activeConv.id)
+        .eq('conversation_id', convId)
         .order('created_at', { ascending: true });
 
       if (!error && data) {
@@ -110,14 +111,14 @@ function MessagesContent() {
 
     // ÉCOUTE EN TEMPS RÉEL (REALTIME SUPABASE)
     const channel = supabase
-      .channel(`chat_${activeConv.id}`)
+      .channel(`chat_${convId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `conversation_id=eq.${activeConv.id}`,
+          filter: `conversation_id=eq.${convId}`,
         },
         (payload) => {
           const newMsg = payload.new as Message;
