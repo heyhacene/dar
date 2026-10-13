@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Recipe, ShoppingItem } from '@/types';
+import { Recipe, ShoppingItem, Ingredient } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
 import { ArrowLeft, Users, Clock, Flame, Trash2, ShoppingCart, Plus, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
@@ -70,7 +70,8 @@ export default function RecipeDetailPage() {
   }
 
   // AJOUT D'UN SEUL INGRÉDIENT AU CHOIX
-  function handleAddSingleIngredient(ing: typeof recipe.ingredients[0]) {
+  function handleAddSingleIngredient(ing: Ingredient) {
+    if (!recipe) return;
     const data = loadLocalData();
     const adjustedQuantity = Math.round(ing.quantity * scale * 10) / 10;
 

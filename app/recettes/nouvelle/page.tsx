@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import { Recipe, Ingredient } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
-import { Plus, Trash2, ArrowLeft, Wand2, Link as LinkIcon, FileText, X, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Wand2, Link2, FileText, X, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NouvelleRecettePage() {
@@ -367,7 +366,7 @@ export default function NouvelleRecettePage() {
                     importTab === 'url' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-500'
                   }`}
                 >
-                  <LinkIcon className="w-3.5 h-3.5" />
+                  <Link2 className="w-3.5 h-3.5" />
                   <span>Par lien Web (URL)</span>
                 </button>
               </div>
