@@ -37,8 +37,9 @@ const CATEGORY_METADATA: Record<string, { label: string; icon: string; order: nu
   autres: { label: 'Autres rayons', icon: '📦', order: 8 },
 };
 
-function autoDetectCategory(name: string): string {
-  const n = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function autoDetectCategory(name?: string): string {
+  if (!name) return 'epicerie';
+  const n = String(name).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (/pomme|poire|banane|orange|citron|fraise|tomate|carotte|salade|courgette|oignon|echalote|ail|avocat|poireau|pomme de terre|champignon|concombre|poivron|haricot|herbe|persil|coriandre|basilic|epinard|legume|fruit|radis|chou|melon|pasteque|peche|abricot/i.test(n)) {
     return 'fruits_legumes';
   }
@@ -77,14 +78,15 @@ export default function CoursesPage() {
     setData(loaded);
   }, []);
 
-  // Consolidation des ingrédients depuis le planning de la semaine (filtré par semaine)
+  // Consolidation des ingrédients depuis le planning de la semaine
   const aggregatedItems = useMemo(() => {
-    if (!data) return [];
+    if (!data || !data.weeklyPlan || !data.recipes) return [];
 
+    const checkedItems = data.checkedItems || {};
     const map = new Map<string, { name: string; quantity: number; unit: string; category: string }>();
 
     Object.entries(data.weeklyPlan).forEach(([slotKey, meal]) => {
-      if (!meal.recipeId) return;
+      if (!meal || !meal.recipeId) return;
 
       const isS2 = slotKey.startsWith('s2_') || meal.week === 's2';
       const isS1 = !isS2;
@@ -93,23 +95,29 @@ export default function CoursesPage() {
       if (weekFilter === 's2' && !isS2) return;
 
       const recipe = data.recipes.find((r) => r.id === meal.recipeId);
-      if (!recipe) return;
+      if (!recipe || !Array.isArray(recipe.ingredients)) return;
 
-      const scale = meal.servings / recipe.defaultServings;
+      const scale =
+        meal.servings && recipe.defaultServings
+          ? meal.servings / recipe.defaultServings
+          : 1;
 
       recipe.ingredients.forEach((ing) => {
-        const key = `${ing.name.toLowerCase().trim()}_${ing.unit.toLowerCase().trim()}`;
-        const qty = ing.quantity * scale;
+        if (!ing || !ing.name) return;
+        const ingName = String(ing.name).trim();
+        const ingUnit = String(ing.unit || '').trim();
+        const key = `${ingName.toLowerCase()}_${ingUnit.toLowerCase()}`;
+        const qty = (typeof ing.quantity === 'number' ? ing.quantity : 1) * scale;
 
         if (map.has(key)) {
           const existing = map.get(key)!;
           existing.quantity += qty;
         } else {
           map.set(key, {
-            name: ing.name,
+            name: ingName,
             quantity: qty,
-            unit: ing.unit,
-            category: ing.category || autoDetectCategory(ing.name),
+            unit: ingUnit,
+            category: ing.category || autoDetectCategory(ingName),
           });
         }
       });
@@ -118,124 +126,44 @@ export default function CoursesPage() {
     const list: ShoppingItem[] = [];
     map.forEach((item, key) => {
       // Ingrédient retiré manuellement de la liste par l'utilisateur
-      if (data.checkedItems[`${HIDDEN_PREFIX}agg_${key}`]) return;
+      if (checkedItems[`${HIDDEN_PREFIX}agg_${key}`]) return;
       list.push({
         id: `agg_${key}`,
         name: item.name,
         quantity: Math.round(item.quantity * 10) / 10,
         unit: item.unit,
         category: item.category,
-        checked: Boolean(data.checkedItems[`agg_${key}`]),
+        checked: Boolean(checkedItems[`agg_${key}`]),
       });
     });
 
     return list;
   }, [data, weekFilter]);
 
-  if (!data) return <div className="p-8 text-center text-gray-500">Génération de la liste...</div>;
+  const allItems = useMemo(() => {
+    if (!data) return [];
+    const customItems = Array.isArray(data.customShoppingItems) ? data.customShoppingItems : [];
+    return [...aggregatedItems, ...customItems];
+  }, [data, aggregatedItems]);
 
-  const allItems = [...aggregatedItems, ...data.customShoppingItems];
+  const visibleItems = useMemo(() => {
+    return allItems.filter((item) => (inStoreMode ? !item.checked : true));
+  }, [allItems, inStoreMode]);
 
-  function toggleItem(id: string, isCustom?: boolean) {
-    if (!data) return;
-    if (isCustom) {
-      const updatedCustom = data.customShoppingItems.map((it) =>
-        it.id === id ? { ...it, checked: !it.checked } : it
-      );
-      persist({ ...data, customShoppingItems: updatedCustom });
-    } else {
-      const isChecked = Boolean(data.checkedItems[id]);
-      const updatedChecked = { ...data.checkedItems, [id]: !isChecked };
-      persist({ ...data, checkedItems: updatedChecked });
-    }
-  }
+  const uncheckedCount = useMemo(() => {
+    return allItems.filter((i) => !i.checked).length;
+  }, [allItems]);
 
-  function handleAddCustomItem(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newItemText.trim() || !data) return;
+  const hasPlannedMeals = useMemo(() => {
+    return data?.weeklyPlan ? Object.keys(data.weeklyPlan).length > 0 : false;
+  }, [data]);
 
-    const detectedCat =
-      selectedCategory === 'auto' ? autoDetectCategory(newItemText) : selectedCategory;
-
-    const newItem: ShoppingItem = {
-      id: `custom_${Date.now()}`,
-      name: newItemText.trim(),
-      category: detectedCat,
-      checked: false,
-      isCustom: true,
-    };
-
-    const updated: AppData = {
-      ...data,
-      customShoppingItems: [newItem, ...data.customShoppingItems],
-    };
-
-    persist(updated);
-    setNewItemText('');
-    setSelectedCategory('auto');
-  }
-
-  function persist(updated: AppData) {
-    setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
-  }
-
-  function handleDeleteItem(item: ShoppingItem, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!data) return;
-    if (item.isCustom) {
-      persist({
-        ...data,
-        customShoppingItems: data.customShoppingItems.filter((i) => i.id !== item.id),
-      });
-    } else {
-      // Ingrédient issu du planning : on le masque de la liste
-      const updatedChecked = { ...data.checkedItems, [`${HIDDEN_PREFIX}${item.id}`]: true };
-      delete updatedChecked[item.id];
-      persist({ ...data, checkedItems: updatedChecked });
-    }
-  }
-
-  function handleClearChecked() {
-    if (!data) return;
-    const updatedCustom = data.customShoppingItems.filter((i) => !i.checked);
-    // Les ingrédients du planning cochés (visibles) sont masqués de la liste
-    const updatedChecked: Record<string, boolean> = { ...data.checkedItems };
-    aggregatedItems.forEach((i) => {
-      if (!i.checked) return;
-      delete updatedChecked[i.id];
-      updatedChecked[`${HIDDEN_PREFIX}${i.id}`] = true;
-    });
-    persist({ ...data, customShoppingItems: updatedCustom, checkedItems: updatedChecked });
-  }
-
-  function handleRestoreHidden() {
-    if (!data) return;
-    const updatedChecked: Record<string, boolean> = {};
-    Object.entries(data.checkedItems).forEach(([k, v]) => {
-      if (!k.startsWith(HIDDEN_PREFIX)) updatedChecked[k] = v;
-    });
-    persist({ ...data, checkedItems: updatedChecked });
-  }
-
-  function handleClearAllCustom() {
-    if (!data) return;
-    if (!confirm('Supprimer tous les articles ajoutés manuellement ?')) return;
-    const updated: AppData = {
-      ...data,
-      customShoppingItems: [],
-    };
-    persist(updated);
-  }
-
-  // Filtrage selon le mode en magasin (masquer les cochés)
-  const visibleItems = allItems.filter((item) => (inStoreMode ? !item.checked : true));
-  const uncheckedCount = allItems.filter((i) => !i.checked).length;
-  const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
-  const hiddenCount = Object.entries(data.checkedItems).filter(
-    ([k, v]) => k.startsWith(HIDDEN_PREFIX) && v
-  ).length;
+  const hiddenCount = useMemo(() => {
+    if (!data?.checkedItems) return 0;
+    return Object.entries(data.checkedItems).filter(
+      ([k, v]) => k.startsWith(HIDDEN_PREFIX) && v
+    ).length;
+  }, [data]);
 
   // Regroupement par rayons
   const groupedItems = useMemo(() => {
@@ -255,6 +183,96 @@ export default function CoursesPage() {
       return orderA - orderB;
     });
   }, [groupedItems]);
+
+  function persist(updated: AppData) {
+    setData(updated);
+    saveLocalData(updated);
+    syncWithGoogle(updated);
+  }
+
+  function toggleItem(id: string, isCustom?: boolean) {
+    if (!data) return;
+    const customList = Array.isArray(data.customShoppingItems) ? data.customShoppingItems : [];
+    const checkedMap = data.checkedItems || {};
+
+    if (isCustom) {
+      const updatedCustom = customList.map((it) =>
+        it.id === id ? { ...it, checked: !it.checked } : it
+      );
+      persist({ ...data, customShoppingItems: updatedCustom });
+    } else {
+      const isChecked = Boolean(checkedMap[id]);
+      const updatedChecked = { ...checkedMap, [id]: !isChecked };
+      persist({ ...data, checkedItems: updatedChecked });
+    }
+  }
+
+  function handleAddCustomItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newItemText.trim() || !data) return;
+
+    const detectedCat =
+      selectedCategory === 'auto' ? autoDetectCategory(newItemText) : selectedCategory;
+
+    const newItem: ShoppingItem = {
+      id: `custom_${Date.now()}`,
+      name: newItemText.trim(),
+      category: detectedCat,
+      checked: false,
+      isCustom: true,
+    };
+
+    const currentCustom = Array.isArray(data.customShoppingItems) ? data.customShoppingItems : [];
+    const updated: AppData = {
+      ...data,
+      customShoppingItems: [newItem, ...currentCustom],
+    };
+
+    persist(updated);
+    setNewItemText('');
+    setSelectedCategory('auto');
+  }
+
+  function handleDeleteItem(item: ShoppingItem, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!data) return;
+    const currentCustom = Array.isArray(data.customShoppingItems) ? data.customShoppingItems : [];
+    const currentChecked = data.checkedItems || {};
+
+    if (item.isCustom) {
+      persist({
+        ...data,
+        customShoppingItems: currentCustom.filter((i) => i.id !== item.id),
+      });
+    } else {
+      const updatedChecked = { ...currentChecked, [`${HIDDEN_PREFIX}${item.id}`]: true };
+      delete updatedChecked[item.id];
+      persist({ ...data, checkedItems: updatedChecked });
+    }
+  }
+
+  function handleClearChecked() {
+    if (!data) return;
+    const currentCustom = Array.isArray(data.customShoppingItems) ? data.customShoppingItems : [];
+    const updatedCustom = currentCustom.filter((i) => !i.checked);
+
+    const updatedChecked: Record<string, boolean> = { ...(data.checkedItems || {}) };
+    aggregatedItems.forEach((i) => {
+      if (!i.checked) return;
+      delete updatedChecked[i.id];
+      updatedChecked[`${HIDDEN_PREFIX}${i.id}`] = true;
+    });
+    persist({ ...data, customShoppingItems: updatedCustom, checkedItems: updatedChecked });
+  }
+
+  function handleRestoreHidden() {
+    if (!data) return;
+    const updatedChecked: Record<string, boolean> = {};
+    Object.entries(data.checkedItems || {}).forEach(([k, v]) => {
+      if (!k.startsWith(HIDDEN_PREFIX)) updatedChecked[k] = v;
+    });
+    persist({ ...data, checkedItems: updatedChecked });
+  }
 
   // Génération du texte de partage
   function generateShareText() {
@@ -288,10 +306,14 @@ export default function CoursesPage() {
   }
 
   async function handleCopyList() {
-    const text = generateShareText();
-    await navigator.clipboard.writeText(text);
-    setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2000);
+    try {
+      const text = generateShareText();
+      await navigator.clipboard.writeText(text);
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 2000);
+    } catch (err) {
+      console.warn('Impossible de copier:', err);
+    }
   }
 
   function handleShareWhatsApp() {
@@ -299,19 +321,34 @@ export default function CoursesPage() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   }
 
+  // Si les données sont en cours de chargement depuis localStorage
+  if (!data) {
+    return (
+      <div className="pb-32 bg-gray-50 dark:bg-slate-900 min-h-screen">
+        <Header title="Liste de Courses" />
+        <CuisineTabs />
+        <div className="p-8 text-center text-gray-400 dark:text-slate-500 text-xs">
+          Chargement de la liste de courses...
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="pb-32">
+    <div className="pb-32 bg-gray-50 dark:bg-slate-900 min-h-screen">
       <Header title="Liste de Courses" onRefresh={() => syncWithGoogle(data).then(setData)} />
       <CuisineTabs />
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-w-lg mx-auto">
         {/* Sélecteur de période pour les courses (2 semaines) */}
-        <div className="grid grid-cols-3 p-1 bg-gray-100 rounded-2xl text-[11px] font-bold shadow-xs">
+        <div className="grid grid-cols-3 p-1 bg-gray-200/70 dark:bg-slate-800 rounded-2xl text-[11px] font-bold shadow-xs">
           <button
             type="button"
             onClick={() => setWeekFilter('all')}
             className={`py-2 rounded-xl transition ${
-              weekFilter === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              weekFilter === 'all'
+                ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             Les 2 semaines
@@ -320,7 +357,9 @@ export default function CoursesPage() {
             type="button"
             onClick={() => setWeekFilter('s1')}
             className={`py-2 rounded-xl transition ${
-              weekFilter === 's1' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              weekFilter === 's1'
+                ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             Cette semaine
@@ -329,7 +368,9 @@ export default function CoursesPage() {
             type="button"
             onClick={() => setWeekFilter('s2')}
             className={`py-2 rounded-xl transition ${
-              weekFilter === 's2' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'
+              weekFilter === 's2'
+                ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
             Semaine pro.
@@ -337,18 +378,18 @@ export default function CoursesPage() {
         </div>
 
         {/* Résumé & Boutons d'action */}
-        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-xs space-y-3">
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-gray-100 dark:border-slate-700 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="font-bold text-gray-900 text-sm">Articles à acheter</h2>
-              <p className="text-xs text-gray-500">
+              <h2 className="font-bold text-gray-900 dark:text-white text-sm">Articles à acheter</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 {uncheckedCount} restant(s) sur {allItems.length}
               </p>
             </div>
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setShowShareModal(true)}
-                className="p-2 text-primary-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition flex items-center gap-1 text-xs font-semibold"
+                className="p-2 text-primary-600 dark:text-primary-400 bg-orange-50 dark:bg-primary-950/60 hover:bg-orange-100 dark:hover:bg-primary-900 rounded-xl transition flex items-center gap-1 text-xs font-semibold"
                 title="Partager la liste"
               >
                 <Share2 className="w-4 h-4" />
@@ -358,7 +399,7 @@ export default function CoursesPage() {
               {hiddenCount > 0 && (
                 <button
                   onClick={handleRestoreHidden}
-                  className="text-xs text-gray-500 hover:text-primary-700 font-semibold px-2 py-1.5 rounded-lg transition"
+                  className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary-700 dark:hover:text-primary-300 font-semibold px-2 py-1.5 rounded-lg transition"
                   title="Remettre dans la liste les ingrédients du planning supprimés"
                 >
                   Restaurer ({hiddenCount})
@@ -367,7 +408,7 @@ export default function CoursesPage() {
               {allItems.some((i) => i.checked) && (
                 <button
                   onClick={handleClearChecked}
-                  className="text-xs text-red-600 font-semibold hover:bg-red-50 px-2 py-1.5 rounded-lg transition"
+                  className="text-xs text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 px-2 py-1.5 rounded-lg transition"
                 >
                   Vider cochés
                 </button>
@@ -376,13 +417,13 @@ export default function CoursesPage() {
           </div>
 
           {/* Barres d'options : Mode magasin & Vue par rayons */}
-          <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-2 text-xs">
+          <div className="pt-2 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
             <button
               onClick={() => setInStoreMode(!inStoreMode)}
               className={`px-3 py-1.5 rounded-xl font-semibold transition flex items-center gap-1.5 ${
                 inStoreMode
                   ? 'bg-emerald-500 text-white shadow-xs'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-650'
               }`}
             >
               <ShoppingCart className="w-3.5 h-3.5" />
@@ -392,7 +433,7 @@ export default function CoursesPage() {
 
             <button
               onClick={() => setGroupByAisle(!groupByAisle)}
-              className="px-3 py-1.5 rounded-xl font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl font-semibold bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-650 transition flex items-center gap-1.5"
             >
               {groupByAisle ? <LayoutGrid className="w-3.5 h-3.5" /> : <List className="w-3.5 h-3.5" />}
               <span>{groupByAisle ? 'Par rayons' : 'Vue liste'}</span>
@@ -402,13 +443,13 @@ export default function CoursesPage() {
 
         {/* Message d'explication si planning vide */}
         {!hasPlannedMeals && (
-          <div className="p-3.5 bg-orange-50/70 border border-orange-100 rounded-2xl flex items-start gap-2.5 text-xs text-orange-950">
-            <Info className="w-4 h-4 text-primary-600 flex-shrink-0 mt-0.5" />
+          <div className="p-3.5 bg-orange-50/70 dark:bg-primary-950/30 border border-orange-100 dark:border-primary-800 rounded-2xl flex items-start gap-2.5 text-xs text-orange-950 dark:text-orange-200">
+            <Info className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-primary-950">Votre planning est vide</p>
-              <p className="text-orange-900/80 mt-0.5 leading-relaxed">
+              <p className="font-semibold text-primary-950 dark:text-primary-200">Votre planning est vide</p>
+              <p className="text-orange-900/80 dark:text-slate-300 mt-0.5 leading-relaxed">
                 Les ingrédients s’ajoutent ici automatiquement quand vous programmez des recettes dans le{' '}
-                <Link href="/planning" className="font-bold text-primary-700 underline">
+                <Link href="/planning" className="font-bold text-primary-700 dark:text-primary-400 underline">
                   Planning
                 </Link>
                 . Vous pouvez aussi ajouter des articles libres ci-dessous.
@@ -425,7 +466,7 @@ export default function CoursesPage() {
               placeholder="Ajouter un article (ex: Bananes, Café, Savon...)"
               value={newItemText}
               onChange={(e) => setNewItemText(e.target.value)}
-              className="flex-1 px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
+              className="flex-1 px-3.5 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs dark:text-white"
             />
             <button
               type="submit"
@@ -438,13 +479,13 @@ export default function CoursesPage() {
 
           {/* Rayon suggéré / modifiable */}
           {newItemText.trim() && (
-            <div className="flex items-center gap-2 text-xs bg-white p-2 rounded-xl border border-gray-100">
-              <Sparkles className="w-3.5 h-3.5 text-primary-600 flex-shrink-0" />
-              <span className="text-gray-500">Rayon :</span>
+            <div className="flex items-center gap-2 text-xs bg-white dark:bg-slate-800 p-2 rounded-xl border border-gray-100 dark:border-slate-700">
+              <Sparkles className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400 flex-shrink-0" />
+              <span className="text-gray-500 dark:text-gray-400">Rayon :</span>
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
-                className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 text-xs text-gray-800 font-medium focus:outline-none"
+                className="bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg px-2 py-1 text-xs text-gray-800 dark:text-white font-medium focus:outline-none"
               >
                 <option value="auto">
                   Automatique ({CATEGORY_METADATA[autoDetectCategory(newItemText)]?.label || 'Épicerie'})
@@ -461,10 +502,10 @@ export default function CoursesPage() {
 
         {/* LISTE DES ARTICLES */}
         {allItems.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <ShoppingBag className="w-12 h-12 mx-auto stroke-1 mb-2 text-gray-300" />
-            <p className="text-sm font-semibold text-gray-600">Votre liste de courses est vide !</p>
-            <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+          <div className="text-center py-12 text-gray-400 dark:text-slate-500">
+            <ShoppingBag className="w-12 h-12 mx-auto stroke-1 mb-2 text-gray-300 dark:text-slate-600" />
+            <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">Votre liste de courses est vide !</p>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1 max-w-xs mx-auto">
               Ajoutez un repas dans votre planning ou ajoutez un article manuel avec le formulaire ci-dessus.
             </p>
           </div>
@@ -480,11 +521,11 @@ export default function CoursesPage() {
               return (
                 <div key={catKey} className="space-y-2">
                   <div className="flex items-center justify-between px-1">
-                    <h3 className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                    <h3 className="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-1.5">
                       <span>{meta.icon}</span>
                       <span>{meta.label}</span>
                     </h3>
-                    <span className="text-[11px] text-gray-400 font-semibold">
+                    <span className="text-[11px] text-gray-400 dark:text-slate-400 font-semibold">
                       {remainingInCat} restant(s)
                     </span>
                   </div>
@@ -520,22 +561,22 @@ export default function CoursesPage() {
 
       {/* MODAL DE PARTAGE DE LA LISTE */}
       {showShareModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-gray-100 animate-in fade-in duration-150">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-xl border border-gray-100 dark:border-slate-700 animate-in fade-in duration-150">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Share2 className="w-5 h-5 text-primary-600" />
-                <h3 className="font-bold text-gray-900 text-sm">Partager la liste de courses</h3>
+                <Share2 className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                <h3 className="font-bold text-gray-900 dark:text-white text-sm">Partager la liste de courses</h3>
               </div>
               <button
                 onClick={() => setShowShareModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-gray-500 leading-relaxed">
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
               Partagez la liste avec le reste de la famille pour qu'ils sachent quoi acheter :
             </p>
 
@@ -550,16 +591,16 @@ export default function CoursesPage() {
 
               <button
                 onClick={handleCopyList}
-                className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-800 dark:text-white font-bold rounded-2xl text-xs transition flex items-center justify-center gap-2"
               >
                 {copiedText ? (
                   <>
-                    <CheckCheck className="w-4 h-4 text-emerald-600" />
-                    <span className="text-emerald-700">Liste copiée dans le presse-papier !</span>
+                    <CheckCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-emerald-700 dark:text-emerald-300">Liste copiée dans le presse-papier !</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4 text-gray-500" />
+                    <Copy className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     <span>Copier le texte de la liste</span>
                   </>
                 )}
@@ -586,13 +627,15 @@ function ShoppingItemCard({
       onClick={onToggle}
       className={`flex items-center gap-3 p-3.5 rounded-2xl border transition cursor-pointer select-none ${
         item.checked
-          ? 'bg-gray-50 border-gray-100 opacity-60'
-          : 'bg-white border-gray-200 shadow-xs hover:border-primary-300'
+          ? 'bg-gray-50 dark:bg-slate-800/40 border-gray-100 dark:border-slate-800 opacity-60'
+          : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-700 shadow-xs hover:border-primary-300 dark:hover:border-primary-600'
       }`}
     >
       <div
         className={`w-6 h-6 rounded-lg flex items-center justify-center border transition flex-shrink-0 ${
-          item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300 bg-white'
+          item.checked
+            ? 'bg-emerald-500 border-emerald-500 text-white'
+            : 'border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700'
         }`}
       >
         {item.checked && <Check className="w-4 h-4 stroke-[3]" />}
@@ -601,12 +644,12 @@ function ShoppingItemCard({
       <div className="flex-1 min-w-0">
         <p
           className={`text-sm font-semibold truncate ${
-            item.checked ? 'line-through text-gray-400' : 'text-gray-900'
+            item.checked ? 'line-through text-gray-400 dark:text-slate-500' : 'text-gray-900 dark:text-white'
           }`}
         >
           {item.name}
         </p>
-        <span className="text-[10px] text-gray-400">
+        <span className="text-[10px] text-gray-400 dark:text-slate-500">
           {item.isCustom ? 'Ajout manuel' : 'Ingrédient du planning'}
         </span>
       </div>
@@ -615,7 +658,9 @@ function ShoppingItemCard({
         {item.quantity ? (
           <span
             className={`text-xs font-bold px-2 py-1 rounded-md ${
-              item.checked ? 'bg-gray-200 text-gray-500' : 'bg-orange-50 text-primary-700'
+              item.checked
+                ? 'bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-gray-400'
+                : 'bg-orange-50 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300'
             }`}
           >
             {item.quantity} {item.unit}
@@ -624,7 +669,7 @@ function ShoppingItemCard({
         <button
           type="button"
           onClick={onDelete}
-          className="p-2 -mr-1 text-gray-400 hover:text-red-500 hover:bg-red-50 transition rounded-lg"
+          className="p-2 -mr-1 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition rounded-lg"
           title="Supprimer cet article"
           aria-label={`Supprimer ${item.name}`}
         >
