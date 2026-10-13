@@ -378,66 +378,77 @@ function MessagesContent() {
 
       {/* MODAL NOUVELLE CONVERSATION */}
       {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-xl">
-            <h3 className="font-bold text-base text-gray-900">Nouvelle discussion</h3>
-
-            {/* CHOIX DES MEMBRES */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-2">
-                Sélectionnez les membres à inviter :
-              </label>
-              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-100 rounded-2xl p-2">
-                {allProfiles
-                  .filter((p) => p.id !== user?.id)
-                  .map((p) => {
-                    const isSelected = selectedUserIds.includes(p.id);
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedUserIds((prev) =>
-                            isSelected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
-                          );
-                        }}
-                        className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition ${
-                          isSelected ? 'bg-primary-50 text-primary-700 font-bold' : 'hover:bg-gray-50'
-                        }`}
-                      >
-                        <span>{p.full_name}</span>
-                        <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${
-                          isSelected ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-300'
-                        }`}>
-                          {isSelected && '✓'}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* NOM DU GROUPE (SI PLUSIEURS MEMBRES) */}
-            {selectedUserIds.length > 1 && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Nom du groupe (optionnel) :
-                </label>
-                <input
-                  type="text"
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="Ex: Les Vacances, Projet travaux..."
-                  className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-2">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl max-w-sm w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
+              <h3 className="font-bold text-base text-gray-900">Nouvelle discussion</h3>
               <button
                 type="button"
                 onClick={() => setShowNewModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50"
+                className="text-gray-400 hover:text-gray-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3.5 overflow-y-auto flex-1">
+              {/* CHOIX DES MEMBRES */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-2">
+                  Sélectionnez les membres à inviter :
+                </label>
+                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-gray-100 rounded-2xl p-2">
+                  {allProfiles
+                    .filter((p) => p.id !== user?.id)
+                    .map((p) => {
+                      const isSelected = selectedUserIds.includes(p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedUserIds((prev) =>
+                              isSelected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                            );
+                          }}
+                          className={`w-full flex items-center justify-between p-2 rounded-xl text-xs transition ${
+                            isSelected ? 'bg-primary-50 text-primary-700 font-bold' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <span>{p.full_name}</span>
+                          <span className={`w-4 h-4 rounded-full border flex items-center justify-center text-[10px] ${
+                            isSelected ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-300'
+                          }`}>
+                            {isSelected && '✓'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* NOM DU GROUPE (SI PLUSIEURS MEMBRES) */}
+              {selectedUserIds.length > 1 && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Nom du groupe (optionnel) :
+                  </label>
+                  <input
+                    type="text"
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    placeholder="Ex: Les Vacances, Projet travaux..."
+                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="p-3.5 bg-gray-50 border-t border-gray-100 flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowNewModal(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-100 transition"
               >
                 Annuler
               </button>
@@ -445,7 +456,7 @@ function MessagesContent() {
                 type="button"
                 disabled={selectedUserIds.length === 0}
                 onClick={handleCreateConversation}
-                className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 disabled:opacity-40"
+                className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition disabled:opacity-40 shadow-sm"
               >
                 Démarrer
               </button>

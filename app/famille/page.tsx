@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Profile } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle } from 'lucide-react';
+import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export default function FamillePage() {
@@ -27,6 +27,7 @@ export default function FamillePage() {
   const [newFullName, setNewFullName] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [addingUser, setAddingUser] = useState(false);
 
   useEffect(() => {
@@ -305,15 +306,25 @@ export default function FamillePage() {
                   <label className="block text-[11px] font-semibold text-gray-600 mb-1">
                     Mot de passe initial
                   </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Minimum 6 caractères"
-                    className="w-full px-3 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      minLength={6}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 6 caractères"
+                      className="w-full pl-3 pr-10 py-2 border rounded-xl text-xs focus:ring-2 focus:ring-primary-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600 transition"
+                      title={showNewPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    >
+                      {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
                 <button
                   type="submit"

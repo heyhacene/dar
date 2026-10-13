@@ -218,15 +218,15 @@ export default function RecettesPage() {
 
       {/* MODALE D'IMPORTATION COOKIDOO */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
                   <Wand2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-base">Importer depuis Cookidoo</h3>
+                  <h3 className="font-bold text-gray-900 text-sm sm:text-base">Importer depuis Cookidoo</h3>
                   <p className="text-[11px] text-gray-500">Thermomix ou n'importe quel site web</p>
                 </div>
               </div>
@@ -238,54 +238,59 @@ export default function RecettesPage() {
               </button>
             </div>
 
-            <form onSubmit={handleImport} className="p-5 space-y-4 overflow-y-auto">
-              <div className="p-3.5 bg-emerald-50/70 border border-emerald-100 rounded-2xl text-xs text-emerald-950 space-y-2">
-                <p className="font-bold flex items-center gap-1.5 text-emerald-900">
-                  <Share2 className="w-4 h-4" /> Comment faire depuis l'application Cookidoo :
-                </p>
-                <ol className="list-decimal pl-4 space-y-1 text-emerald-900/90 leading-relaxed">
-                  <li>Ouvrez votre recette sur l'application <strong>Cookidoo</strong>.</li>
-                  <li>Touchez l'icône <strong>Partager</strong> <em>(les 3 points ou la flèche en haut de l'écran)</em>.</li>
-                  <li>Touchez <strong>« Copier le lien »</strong> <em>(ou partagez le texte vers Notes/WhatsApp)</em>.</li>
-                  <li>Revenez ici et <strong>collez dans la case ci-dessous</strong> !</li>
-                </ol>
-              </div>
-
-              {error && (
-                <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2 text-red-700 text-xs">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span className="leading-relaxed">{error}</span>
+            <form onSubmit={handleImport} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div className="p-4 space-y-3.5 overflow-y-auto flex-1">
+                <div className="p-3 bg-emerald-50/70 border border-emerald-100 rounded-2xl text-xs text-emerald-950 space-y-1.5">
+                  <p className="font-bold flex items-center gap-1.5 text-emerald-900">
+                    <Share2 className="w-3.5 h-3.5" /> Comment faire depuis Cookidoo :
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-1 text-emerald-900/90 text-[11px] leading-relaxed">
+                    <li>Ouvrez votre recette sur l'application <strong>Cookidoo</strong>.</li>
+                    <li>Touchez l'icône <strong>Partager</strong> <em>(les 3 points ou la flèche)</em>.</li>
+                    <li>Touchez <strong>« Copier le lien »</strong> <em>(ou partagez le texte)</em>.</li>
+                    <li>Revenez ici et <strong>collez dans la case ci-dessous</strong> !</li>
+                  </ol>
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                  Collez le lien Cookidoo ou le texte copié ici :
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Exemple : https://cookidoo.fr/recipes/recipe/fr-FR/r... ou collez le texte de la recette"
-                  value={importInput}
-                  onChange={(e) => setImportInput(e.target.value)}
-                  className="w-full p-3 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-mono"
-                />
+                {error && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-start gap-2 text-red-700 text-xs">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">{error}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                    Collez le lien Cookidoo ou le texte copié ici :
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    placeholder="Exemple : https://cookidoo.fr/recipes/recipe/fr-FR/r... ou collez le texte de la recette"
+                    value={importInput}
+                    onChange={(e) => setImportInput(e.target.value)}
+                    className="w-full p-2.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {loading ? (
-                  <span>Analyse et découpage en cours...</span>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>Importer dans mon carnet</span>
-                  </>
-                )}
-              </button>
+              {/* FOOTER AVEC BOUTON TOUJOURS ACCESSIBLE SUR MOBILE */}
+              <div className="p-3.5 bg-gray-50 border-t border-gray-100 flex-shrink-0">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <span>Analyse et découpage en cours...</span>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>Importer dans mon carnet</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </div>

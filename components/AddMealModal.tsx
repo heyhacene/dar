@@ -51,11 +51,11 @@ export default function AddMealModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white w-full max-w-md rounded-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
           <div>
-            <h3 className="font-bold text-gray-900 text-lg">
+            <h3 className="font-bold text-gray-900 text-base">
               {initialMeal ? 'Modifier le repas' : `Repas de ${dayLabel}`}
             </h3>
             <p className="text-xs text-primary-600 font-medium">{dayLabel} • {typeLabel}</p>
@@ -65,7 +65,8 @@ export default function AddMealModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 flex-1 overflow-y-auto space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="p-4 flex-1 overflow-y-auto space-y-3.5">
           <div className="grid grid-cols-2 p-1 bg-gray-100 rounded-xl text-sm font-medium">
             <button
               type="button"
@@ -163,13 +164,14 @@ export default function AddMealModal({
               />
             </div>
           )}
+          </div>
 
-          <div className="pt-2 flex items-center gap-2">
+          <div className="p-3.5 bg-gray-50 border-t border-gray-100 flex-shrink-0 flex items-center gap-2">
             {onDelete && (
               <button
                 type="button"
                 onClick={onDelete}
-                className="px-3.5 py-2.5 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 text-sm font-semibold transition flex items-center gap-1.5"
+                className="px-3.5 py-2.5 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 text-xs font-bold transition flex items-center gap-1.5"
                 title="Supprimer ce repas"
               >
                 <Trash2 className="w-4 h-4" />
@@ -178,7 +180,7 @@ export default function AddMealModal({
             )}
             <button
               type="submit"
-              className="flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm shadow-sm transition text-center"
+              className="flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs shadow-md transition text-center"
             >
               {initialMeal ? 'Mettre à jour' : 'Enregistrer au planning'}
             </button>
