@@ -7,3 +7,12 @@ out
 .vercel
 .env*
 *.tsbuildinfo
+
+# Android build outputs
+android/.gradle
+android/build
+android/app/build
+android/.idea
+*.apk
+*.aab
+build-output
