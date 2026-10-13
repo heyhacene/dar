@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dar-v4';
+const CACHE_NAME = 'dar-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

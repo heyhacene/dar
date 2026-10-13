@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Profile } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon } from 'lucide-react';
+import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon, KeyRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from '@/lib/theme';
@@ -32,6 +32,58 @@ export default function FamillePage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [addingUser, setAddingUser] = useState(false);
+
+  // Changement de mot de passe par l'utilisateur connecté
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [currentNewPassword, setCurrentNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showPwdText, setShowPwdText] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+  const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdError(null);
+    setPwdSuccess(null);
+
+    if (!currentNewPassword || currentNewPassword.length < 6) {
+      setPwdError('Le mot de passe doit comporter au moins 6 caractères.');
+      return;
+    }
+
+    if (currentNewPassword !== confirmNewPassword) {
+      setPwdError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+
+    if (!isSupabaseConfigured()) {
+      setPwdError("Supabase n'est pas configuré. Impossible de modifier le mot de passe.");
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: currentNewPassword,
+      });
+
+      if (error) throw error;
+
+      setPwdSuccess('Votre mot de passe a été modifié avec succès !');
+      setCurrentNewPassword('');
+      setConfirmNewPassword('');
+      setTimeout(() => {
+        setShowPasswordForm(false);
+        setPwdSuccess(null);
+      }, 2500);
+    } catch (err: any) {
+      console.error('Erreur changement mot de passe:', err);
+      setPwdError(err.message || 'Impossible de modifier le mot de passe.');
+    } finally {
+      setPwdLoading(false);
+    }
+  }
 
   useEffect(() => {
     fetchMembers();
@@ -168,36 +220,146 @@ export default function FamillePage() {
 
       <div className="p-4 space-y-6">
         {/* MON COMPTE & DÉCONNEXION */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white font-black text-lg flex items-center justify-center shadow-sm">
-              {profile?.full_name ? profile.full_name[0].toUpperCase() : 'U'}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-gray-900 text-sm">
-                  {profile?.full_name || 'Utilisateur'}
-                </span>
-                {isAdmin && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 flex items-center gap-1">
-                    <Shield className="w-3 h-3" />
-                    Admin
-                  </span>
-                )}
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white font-black text-lg flex items-center justify-center shadow-sm">
+                {profile?.full_name ? profile.full_name[0].toUpperCase() : 'U'}
               </div>
-              <p className="text-xs text-gray-500">{user?.email || profile?.email}</p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gray-900 text-sm">
+                    {profile?.full_name || 'Utilisateur'}
+                  </span>
+                  {isAdmin && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 flex items-center gap-1">
+                      <Shield className="w-3 h-3" />
+                      Admin
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">{user?.email || profile?.email}</p>
+              </div>
             </div>
+            <button
+              onClick={async () => {
+                await signOut();
+                router.push('/login');
+              }}
+              title="Se déconnecter"
+              className="p-2 text-gray-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
-          <button
-            onClick={async () => {
-              await signOut();
-              router.push('/login');
-            }}
-            title="Se déconnecter"
-            className="p-2 text-gray-400 hover:text-red-600 rounded-xl hover:bg-red-50 transition"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+
+          {/* CHANGER LE MOT DE PASSE */}
+          <div className="pt-2 border-t border-gray-100">
+            {!showPasswordForm ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordForm(true);
+                  setPwdError(null);
+                  setPwdSuccess(null);
+                }}
+                className="text-xs font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1.5 transition py-1"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>Changer mon mot de passe</span>
+              </button>
+            ) : (
+              <form onSubmit={handleChangePassword} className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-primary-600" />
+                    Nouveau mot de passe
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordForm(false);
+                      setCurrentNewPassword('');
+                      setConfirmNewPassword('');
+                      setPwdError(null);
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                  >
+                    Annuler
+                  </button>
+                </div>
+
+                {pwdError && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{pwdError}</span>
+                  </div>
+                )}
+
+                {pwdSuccess && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-semibold">
+                    <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+                    <span>{pwdSuccess}</span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input
+                      type={showPwdText ? 'text' : 'password'}
+                      value={currentNewPassword}
+                      onChange={(e) => setCurrentNewPassword(e.target.value)}
+                      placeholder="Nouveau mot de passe (min. 6 car.)"
+                      required
+                      minLength={6}
+                      className="w-full px-3 py-2 pr-10 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPwdText(!showPwdText)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPwdText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type={showPwdText ? 'text' : 'password'}
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      placeholder="Confirmer le nouveau mot de passe"
+                      required
+                      minLength={6}
+                      className="w-full px-3 py-2 pr-10 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordForm(false);
+                      setCurrentNewPassword('');
+                      setConfirmNewPassword('');
+                      setPwdError(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 transition"
+                  >
+                    Fermer
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pwdLoading}
+                    className="px-3.5 py-1.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition disabled:opacity-50 shadow-xs"
+                  >
+                    {pwdLoading ? 'Mise à jour...' : 'Enregistrer'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         </div>
 
         {/* APPARENCE & MODE SOMBRE */}
