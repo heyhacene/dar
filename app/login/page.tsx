@@ -118,7 +118,16 @@ export default function LoginPage() {
         }
       }
     } catch (err: any) {
-      setError(err?.message || 'Une erreur est survenue lors de la connexion.');
+      const msg = err?.message || '';
+      if (msg.includes('Email not confirmed')) {
+        setError(
+          "L'adresse e-mail n'a pas encore été confirmée. Vérifiez vos e-mails (et spams), ou l'administrateur peut la valider en 1 clic dans Supabase (Authentication > Users > Confirm user)."
+        );
+      } else if (msg.includes('Invalid login credentials')) {
+        setError("Adresse email ou mot de passe incorrect.");
+      } else {
+        setError(msg || 'Une erreur est survenue lors de la connexion.');
+      }
     } finally {
       setLoading(false);
     }

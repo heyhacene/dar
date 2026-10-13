@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Profile } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon, KeyRound } from 'lucide-react';
+import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon, KeyRound, SlidersHorizontal, Edit2, Check, X, ShieldAlert, ShieldCheck, UserX, UserCheck } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from '@/lib/theme';
@@ -32,6 +32,11 @@ export default function FamillePage() {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [addingUser, setAddingUser] = useState(false);
+
+  // Gestion avancée des membres par l'Admin
+  const [managingMemberId, setManagingMemberId] = useState<string | null>(null);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   // Changement de mot de passe par l'utilisateur connecté
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -123,10 +128,48 @@ export default function FamillePage() {
 
       if (error) throw error;
 
-      setActionSuccess(newStatus === 'approved' ? 'Membre approuvé avec succès !' : 'Demande refusée.');
+      setActionSuccess(newStatus === 'approved' ? 'Accès validé avec succès !' : 'Accès révoqué / suspendu.');
       fetchMembers();
     } catch (err: any) {
       setError(err?.message || 'Erreur lors de la mise à jour.');
+    }
+  }
+
+  // Modifier le rôle d'un membre (Admin seulement)
+  async function handleUpdateRole(userId: string, newRole: 'admin' | 'member') {
+    setError(null);
+    setActionSuccess(null);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (error) throw error;
+      setActionSuccess(`Rôle mis à jour (${newRole === 'admin' ? 'Administrateur' : 'Membre simple'}) !`);
+      fetchMembers();
+    } catch (err: any) {
+      setError(err?.message || 'Erreur lors de la mise à jour du rôle.');
+    }
+  }
+
+  // Modifier le nom d'un membre (Admin seulement)
+  async function handleUpdateFullName(userId: string, newName: string) {
+    if (!newName.trim()) return;
+    setError(null);
+    setActionSuccess(null);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ full_name: newName.trim() })
+        .eq('id', userId);
+
+      if (error) throw error;
+      setActionSuccess('Nom du membre mis à jour !');
+      setEditingMemberId(null);
+      fetchMembers();
+    } catch (err: any) {
+      setError(err?.message || 'Erreur lors de la mise à jour du nom.');
     }
   }
 
@@ -213,6 +256,7 @@ export default function FamillePage() {
 
   const pendingMembers = members.filter((m) => m.status === 'pending');
   const approvedMembers = members.filter((m) => m.status === 'approved');
+  const rejectedMembers = members.filter((m) => m.status === 'rejected');
 
   return (
     <div className="pb-32">
@@ -534,6 +578,16 @@ export default function FamillePage() {
                 >
                   {addingUser ? 'Création en cours...' : 'Créer et valider ce membre'}
                 </button>
+
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-[11px] text-amber-900 leading-relaxed space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                    Important pour la première connexion :
+                  </p>
+                  <p className="text-amber-800">
+                    Si le nouveau membre voit le message <em>« Email not confirmed »</em> à la connexion, validez son e-mail en 1 clic dans votre tableau de bord Supabase (<strong>Authentication &gt; Users &gt; ... &gt; Confirm User</strong>), ou désactivez l'option <strong>Confirm email</strong> dans <strong>Authentication &gt; Providers &gt; Email</strong>.
+                  </p>
+                </div>
               </form>
             )}
           </div>
@@ -549,43 +603,202 @@ export default function FamillePage() {
           <div className="space-y-2">
             {approvedMembers.map((m) => {
               const isMe = m.id === user?.id;
+              const isManaging = managingMemberId === m.id;
+              const isEditing = editingMemberId === m.id;
+
               return (
-                <div
-                  key={m.id}
-                  className="bg-white rounded-2xl p-3.5 border border-gray-100 flex items-center justify-between shadow-xs hover:border-gray-200 transition"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-sm">
-                      {m.full_name ? m.full_name[0].toUpperCase() : 'M'}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-xs text-gray-900">{m.full_name}</span>
-                        {isMe && <span className="text-[10px] text-gray-400">(Vous)</span>}
-                        {m.role === 'admin' && (
-                          <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-amber-100 text-amber-800">
-                            Admin
-                          </span>
-                        )}
+                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xs hover:border-gray-200 transition">
+                  <div className="p-3.5 flex items-center justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
+                        {m.full_name ? m.full_name[0].toUpperCase() : 'M'}
                       </div>
-                      <span className="text-[11px] text-gray-400">{m.email}</span>
+                      <div className="min-w-0">
+                        {isEditing ? (
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <input
+                              type="text"
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              className="px-2 py-1 text-xs border border-primary-500 rounded-lg focus:outline-none bg-gray-50 font-bold"
+                              placeholder="Nom du membre"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleUpdateFullName(m.id, editingName)}
+                              title="Valider"
+                              className="p-1 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setEditingMemberId(null)}
+                              title="Annuler"
+                              className="p-1 text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-xs text-gray-900 truncate">{m.full_name}</span>
+                            {isMe && <span className="text-[10px] text-gray-400">(Vous)</span>}
+                            {m.role === 'admin' && (
+                              <span className="px-1.5 py-0.5 rounded-md text-[9px] font-bold bg-amber-100 text-amber-800 flex items-center gap-0.5">
+                                <Shield className="w-2.5 h-2.5" /> Admin
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <span className="text-[11px] text-gray-400 block truncate">{m.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {!isMe && (
+                        <button
+                          onClick={() => handleStartDirectChat(m)}
+                          title="Envoyer un message privé"
+                          className="p-2 text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-xl transition"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {isAdmin && !isMe && (
+                        <button
+                          onClick={() => {
+                            setManagingMemberId(isManaging ? null : m.id);
+                            setEditingMemberId(null);
+                          }}
+                          title="Gérer ce membre"
+                          className={`p-2 rounded-xl transition flex items-center gap-1 text-xs font-semibold ${
+                            isManaging
+                              ? 'bg-primary-600 text-white shadow-xs'
+                              : 'text-gray-600 hover:text-gray-900 bg-gray-100 hover:bg-gray-200'
+                          }`}
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Gérer</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {!isMe && (
-                    <button
-                      onClick={() => handleStartDirectChat(m)}
-                      title="Envoyer un message privé"
-                      className="p-2 text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-xl transition"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                    </button>
+                  {/* PANNEAU D'ADMINISTRATION DU MEMBRE */}
+                  {isAdmin && !isMe && isManaging && (
+                    <div className="p-3 bg-gray-50 border-t border-gray-100 space-y-2.5 text-xs animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between text-gray-500 font-semibold text-[11px]">
+                        <span>Gestion du compte de {m.full_name}</span>
+                        <button
+                          onClick={() => setManagingMemberId(null)}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          Fermer
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {/* Renommer */}
+                        <button
+                          onClick={() => {
+                            setEditingMemberId(m.id);
+                            setEditingName(m.full_name);
+                          }}
+                          className="p-2 rounded-xl bg-white border border-gray-200 hover:border-primary-400 text-gray-700 hover:text-primary-700 transition flex items-center justify-center gap-1.5 font-medium shadow-xs"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-gray-400" />
+                          <span>Modifier le nom</span>
+                        </button>
+
+                        {/* Changer de rôle */}
+                        {m.role === 'member' ? (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Promouvoir ${m.full_name} en tant qu'Administrateur ?`)) {
+                                handleUpdateRole(m.id, 'admin');
+                              }
+                            }}
+                            className="p-2 rounded-xl bg-white border border-amber-200 hover:bg-amber-50 text-amber-900 transition flex items-center justify-center gap-1.5 font-medium shadow-xs"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Nommer Admin</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (confirm(`Rétrograder ${m.full_name} en tant que Membre simple ?`)) {
+                                handleUpdateRole(m.id, 'member');
+                              }
+                            }}
+                            className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 transition flex items-center justify-center gap-1.5 font-medium shadow-xs"
+                          >
+                            <ShieldAlert className="w-3.5 h-3.5 text-gray-400" />
+                            <span>Rétrograder Membre</span>
+                          </button>
+                        )}
+
+                        {/* Bloquer / Suspendre */}
+                        <button
+                          onClick={() => {
+                            if (confirm(`Êtes-vous sûr de vouloir suspendre l'accès de ${m.full_name} ? Il ne pourra plus se connecter.`)) {
+                              handleUpdateStatus(m.id, 'rejected');
+                            }
+                          }}
+                          className="p-2 rounded-xl bg-red-50 border border-red-200 hover:bg-red-100 text-red-700 transition flex items-center justify-center gap-1.5 font-medium shadow-xs"
+                        >
+                          <UserX className="w-3.5 h-3.5 text-red-600" />
+                          <span>Suspendre l'accès</span>
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* SECTION ADMIN : MEMBRES SUSPENDUS OU REFUSÉS */}
+        {isAdmin && rejectedMembers.length > 0 && (
+          <div className="bg-red-50/70 border border-red-200 rounded-3xl p-5 space-y-3 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-red-900 text-sm flex items-center gap-2">
+                <UserX className="w-4 h-4 text-red-600" />
+                <span>Membres suspendus ou refusés ({rejectedMembers.length})</span>
+              </h2>
+            </div>
+            <p className="text-xs text-red-700">
+              Ces personnes n'ont plus accès à l'application familiale. Vous pouvez réactiver leur accès à tout moment :
+            </p>
+
+            <div className="space-y-2 mt-2">
+              {rejectedMembers.map((m) => (
+                <div
+                  key={m.id}
+                  className="bg-white rounded-2xl p-3 border border-red-200 flex items-center justify-between shadow-xs"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-xs text-gray-900">{m.full_name}</h3>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-800">
+                        Accès révoqué
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500">{m.email}</p>
+                  </div>
+                  <button
+                    onClick={() => handleUpdateStatus(m.id, 'approved')}
+                    className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs hover:bg-emerald-700 transition flex items-center gap-1 shadow-xs"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Réactiver l'accès</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
