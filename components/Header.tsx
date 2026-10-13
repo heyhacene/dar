@@ -6,16 +6,22 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Logo from './Logo';
 import { useTheme } from '@/lib/theme';
+import { useAuth } from '@/lib/authContext';
 
 export default function Header({ title, onRefresh }: { title: string; onRefresh?: () => void }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const { isDark, toggle } = useTheme();
+  const { signOut } = useAuth();
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
-    router.refresh();
+    try {
+      await signOut();
+      await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } finally {
+      router.push('/login');
+      router.refresh();
+    }
   }
 
   async function handleRefresh() {
