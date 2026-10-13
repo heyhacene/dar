@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Message, Conversation, Profile } from '@/lib/supabase';
 import { Send, ArrowLeft, Plus, Users, User, MessageCircle, Clock, Smile } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 
-export default function MessagesPage() {
+function MessagesContent() {
   const router = useRouter();
   const { user, profile, loading: authLoading } = useAuth();
   const searchParams = useSearchParams();
@@ -454,5 +454,19 @@ export default function MessagesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function MessagesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-xs text-gray-400">
+          Chargement de la messagerie...
+        </div>
+      }
+    >
+      <MessagesContent />
+    </Suspense>
   );
 }
