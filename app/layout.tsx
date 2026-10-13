@@ -29,7 +29,8 @@ export default function RootLayout({
   return (
     <html lang="fr" className="h-full bg-gray-50">
       <head>
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/icon.svg" />
       </head>
       <body className="h-full flex flex-col max-w-lg mx-auto bg-white shadow-xl min-h-screen relative pb-36">
         <main className="flex-1">{children}</main>

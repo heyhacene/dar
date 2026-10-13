@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, UtensilsCrossed, AlertCircle, ArrowRight } from 'lucide-react';
+import { Lock, AlertCircle, ArrowRight } from 'lucide-react';
+import Logo from '@/components/Logo';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -39,9 +40,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col justify-center px-6 py-12 bg-gradient-to-b from-orange-50/50 to-white">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="w-16 h-16 bg-primary-600 rounded-3xl mx-auto flex items-center justify-center text-white shadow-lg shadow-orange-500/30 mb-4">
-          <UtensilsCrossed className="w-8 h-8" />
-        </div>
+        <Logo className="w-16 h-16 mx-auto mb-4 shadow-lg shadow-orange-500/20" size={64} />
         <h2 className="text-2xl font-black text-gray-900 tracking-tight">Dar</h2>
         <p className="mt-1 text-sm text-gray-500">
           Entrez le mot de passe pour accéder à votre espace

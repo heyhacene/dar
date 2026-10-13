@@ -1,8 +1,9 @@
 'use client';
 
-import { UtensilsCrossed, LogOut, RefreshCw } from 'lucide-react';
+import { LogOut, RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import Logo from './Logo';
 
 export default function Header({ title, onRefresh }: { title: string; onRefresh?: () => void }) {
   const router = useRouter();
@@ -24,10 +25,8 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 flex items-center justify-between shadow-xs">
-      <div className="flex items-center gap-2">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-500 to-amber-500 flex items-center justify-center text-white shadow-sm">
-          <UtensilsCrossed className="w-5 h-5" />
-        </div>
+      <div className="flex items-center gap-2.5">
+        <Logo className="w-9 h-9 shadow-xs rounded-2xl" />
         <div>
           <h1 className="text-lg font-bold text-gray-900 leading-tight">{title}</h1>
           <p className="text-xs text-primary-600 font-semibold tracking-wide">Dar</p>
