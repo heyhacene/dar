@@ -78,6 +78,32 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Réinitialisation du planning et des courses */}
+        <div className="bg-white p-4 rounded-2xl border border-red-100 shadow-xs space-y-2">
+          <h2 className="font-bold text-sm text-gray-900">Nettoyage des données</h2>
+          <p className="text-xs text-gray-500">
+            Remettre à zéro le planning de la semaine et la liste de courses en un clic (vos recettes sont conservées).
+          </p>
+          <button
+            onClick={() => {
+              if (confirm('Voulez-vous vraiment vider tout le planning et toute la liste de courses ?')) {
+                const updated = {
+                  ...data!,
+                  weeklyPlan: {},
+                  customShoppingItems: [],
+                  checkedItems: {},
+                };
+                saveLocalData(updated);
+                setData(updated);
+                alert('Planning et liste de courses vidés !');
+              }
+            }}
+            className="w-full py-2.5 px-3 bg-red-50 hover:bg-red-100 text-red-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition"
+          >
+            Vider le planning & la liste de courses
+          </button>
+        </div>
+
         {/* Notice PWA Smartphone */}
         <div className="bg-orange-50/70 p-4 rounded-2xl border border-orange-100 space-y-2">
           <h3 className="font-bold text-xs text-primary-900">📱 Installer sur smartphone (PWA)</h3>

@@ -79,15 +79,7 @@ export const initialRecipes: Recipe[] = [
 
 export const initialAppData: AppData = {
   recipes: initialRecipes,
-  weeklyPlan: {
-    lundi_midi: { id: 'p_1', day: 'lundi', type: 'midi', customTitle: 'Salade composée & Restes du week-end', servings: 2 },
-    lundi_soir: { id: 'p_2', day: 'lundi', type: 'soir', recipeId: 'rec_1', servings: 4 },
-    mardi_soir: { id: 'p_3', day: 'mardi', type: 'soir', recipeId: 'rec_3', servings: 4 },
-    mercredi_soir: { id: 'p_4', day: 'mercredi', type: 'soir', recipeId: 'rec_2', servings: 4 },
-  },
-  customShoppingItems: [
-    { id: 'c_1', name: 'Café moulu', category: 'epicerie', checked: false, isCustom: true },
-    { id: 'c_2', name: 'Essuie-tout', category: 'autres', checked: false, isCustom: true },
-  ],
+  weeklyPlan: {},
+  customShoppingItems: [],
   checkedItems: {},
 };

@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import { AppData, ShoppingItem } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
-import { Check, Plus, ShoppingBag } from 'lucide-react';
+import { Check, Plus, ShoppingBag, Trash2, Info } from 'lucide-react';
+import Link from 'next/link';
 
 export default function CoursesPage() {
   const [data, setData] = useState<AppData | null>(null);
@@ -74,12 +75,14 @@ export default function CoursesPage() {
       const updated = { ...data, customShoppingItems: updatedCustom };
       setData(updated);
       saveLocalData(updated);
+      syncWithGoogle(updated);
     } else {
       const isChecked = Boolean(data.checkedItems[id]);
       const updatedChecked = { ...data.checkedItems, [id]: !isChecked };
       const updated = { ...data, checkedItems: updatedChecked };
       setData(updated);
       saveLocalData(updated);
+      syncWithGoogle(updated);
     }
   }
 
@@ -102,7 +105,21 @@ export default function CoursesPage() {
 
     setData(updated);
     saveLocalData(updated);
+    syncWithGoogle(updated);
     setNewItemText('');
+  }
+
+  function handleDeleteCustomItem(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!data) return;
+    const updatedCustom = data.customShoppingItems.filter((i) => i.id !== id);
+    const updated: AppData = {
+      ...data,
+      customShoppingItems: updatedCustom,
+    };
+    setData(updated);
+    saveLocalData(updated);
+    syncWithGoogle(updated);
   }
 
   function handleClearChecked() {
@@ -115,9 +132,23 @@ export default function CoursesPage() {
     };
     setData(updated);
     saveLocalData(updated);
+    syncWithGoogle(updated);
+  }
+
+  function handleClearAllCustom() {
+    if (!data) return;
+    if (!confirm('Supprimer tous les articles ajoutés manuellement ?')) return;
+    const updated: AppData = {
+      ...data,
+      customShoppingItems: [],
+    };
+    setData(updated);
+    saveLocalData(updated);
+    syncWithGoogle(updated);
   }
 
   const uncheckedCount = allItems.filter((i) => !i.checked).length;
+  const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
 
   return (
     <div>
@@ -132,15 +163,43 @@ export default function CoursesPage() {
               {uncheckedCount} restant(s) sur {allItems.length}
             </p>
           </div>
-          {allItems.some((i) => i.checked) && (
-            <button
-              onClick={handleClearChecked}
-              className="text-xs text-red-600 font-semibold hover:bg-red-50 px-2.5 py-1.5 rounded-lg transition"
-            >
-              Décocher / Vider cochés
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {data.customShoppingItems.length > 0 && (
+              <button
+                onClick={handleClearAllCustom}
+                className="text-xs text-gray-500 hover:text-red-600 font-semibold px-2 py-1.5 rounded-lg transition"
+                title="Vider les ajouts manuels"
+              >
+                Vider manuels
+              </button>
+            )}
+            {allItems.some((i) => i.checked) && (
+              <button
+                onClick={handleClearChecked}
+                className="text-xs text-red-600 font-semibold hover:bg-red-50 px-2 py-1.5 rounded-lg transition"
+              >
+                Vider cochés
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Message d'explication si planning vide */}
+        {!hasPlannedMeals && (
+          <div className="p-3.5 bg-orange-50/70 border border-orange-100 rounded-2xl flex items-start gap-2.5 text-xs text-orange-950">
+            <Info className="w-4 h-4 text-primary-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-primary-950">Votre planning est vide</p>
+              <p className="text-orange-900/80 mt-0.5 leading-relaxed">
+                Les ingrédients s’ajoutent ici automatiquement quand vous programmez des recettes dans le{' '}
+                <Link href="/planning" className="font-bold text-primary-700 underline">
+                  Planning
+                </Link>
+                . Vous pouvez aussi ajouter des articles libres ci-dessous.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Ajout libre */}
         <form onSubmit={handleAddCustomItem} className="flex gap-2">
@@ -154,12 +213,13 @@ export default function CoursesPage() {
           <button
             type="submit"
             className="p-2.5 bg-primary-600 text-white rounded-xl shadow-xs hover:bg-primary-700 transition"
+            title="Ajouter à la liste"
           >
             <Plus className="w-5 h-5" />
           </button>
         </form>
 
-        {/* Cases à cocher interactives */}
+        {/* Liste avec cases à cocher */}
         <div className="space-y-2">
           {allItems.map((item) => (
             <div
@@ -172,7 +232,7 @@ export default function CoursesPage() {
               }`}
             >
               <div
-                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${
+                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition flex-shrink-0 ${
                   item.checked
                     ? 'bg-emerald-500 border-emerald-500 text-white'
                     : 'border-gray-300 bg-white'
@@ -181,30 +241,45 @@ export default function CoursesPage() {
                 {item.checked && <Check className="w-4 h-4 stroke-[3]" />}
               </div>
 
-              <div className="flex-1">
-                <p className={`text-sm font-semibold ${item.checked ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-semibold truncate ${item.checked ? 'line-through text-gray-400' : 'text-gray-900'}`}>
                   {item.name}
                 </p>
-                {item.isCustom && <span className="text-[10px] text-gray-400">Ajout libre</span>}
+                <span className="text-[10px] text-gray-400">
+                  {item.isCustom ? 'Ajout manuel' : 'Ingrédient du planning'}
+                </span>
               </div>
 
-              {item.quantity && (
-                <span
-                  className={`text-xs font-bold px-2 py-1 rounded-md ${
-                    item.checked ? 'bg-gray-200 text-gray-500' : 'bg-orange-50 text-primary-700'
-                  }`}
-                >
-                  {item.quantity} {item.unit}
-                </span>
-              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {item.quantity && (
+                  <span
+                    className={`text-xs font-bold px-2 py-1 rounded-md ${
+                      item.checked ? 'bg-gray-200 text-gray-500' : 'bg-orange-50 text-primary-700'
+                    }`}
+                  >
+                    {item.quantity} {item.unit}
+                  </span>
+                )}
+                {item.isCustom && (
+                  <button
+                    onClick={(e) => handleDeleteCustomItem(item.id, e)}
+                    className="p-1 text-gray-400 hover:text-red-500 transition rounded-md"
+                    title="Supprimer cet article"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
 
           {allItems.length === 0 && (
             <div className="text-center py-12 text-gray-400">
-              <ShoppingBag className="w-12 h-12 mx-auto stroke-1 mb-2" />
-              <p className="text-sm">Votre liste de courses est vide !</p>
-              <p className="text-xs text-gray-400 mt-1">Ajoutez des recettes dans votre planning pour la remplir.</p>
+              <ShoppingBag className="w-12 h-12 mx-auto stroke-1 mb-2 text-gray-300" />
+              <p className="text-sm font-semibold text-gray-600">Votre liste de courses est vide !</p>
+              <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">
+                Ajoutez un repas dans votre planning ou ajoutez un article manuel avec le formulaire ci-dessus.
+              </p>
             </div>
           )}
         </div>

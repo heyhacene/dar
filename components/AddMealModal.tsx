@@ -1,24 +1,37 @@
 'use client';
 
 import { useState } from 'react';
-import { Recipe, DayOfWeek, MealType } from '@/types';
-import { X, Search, Users } from 'lucide-react';
+import { Recipe, DayOfWeek, MealType, PlannedMeal } from '@/types';
+import { X, Search, Users, Trash2 } from 'lucide-react';
 
 interface Props {
   day: DayOfWeek;
   type: MealType;
   recipes: Recipe[];
+  initialMeal?: PlannedMeal;
   onClose: () => void;
   onSave: (meal: { recipeId?: string; customTitle?: string; servings: number }) => void;
   onDelete?: () => void;
 }
 
-export default function AddMealModal({ day, type, recipes, onClose, onSave, onDelete }: Props) {
-  const [tab, setTab] = useState<'recette' | 'libre'>('recette');
+export default function AddMealModal({
+  day,
+  type,
+  recipes,
+  initialMeal,
+  onClose,
+  onSave,
+  onDelete,
+}: Props) {
+  const [tab, setTab] = useState<'recette' | 'libre'>(
+    initialMeal?.customTitle ? 'libre' : 'recette'
+  );
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string>(recipes[0]?.id || '');
-  const [customTitle, setCustomTitle] = useState('');
-  const [servings, setServings] = useState<number>(4);
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>(
+    initialMeal?.recipeId || recipes[0]?.id || ''
+  );
+  const [customTitle, setCustomTitle] = useState(initialMeal?.customTitle || '');
+  const [servings, setServings] = useState<number>(initialMeal?.servings || 4);
 
   const filteredRecipes = recipes.filter((r) =>
     r.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -42,8 +55,10 @@ export default function AddMealModal({ day, type, recipes, onClose, onSave, onDe
       <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in slide-in-from-bottom">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-gray-900 text-lg">Repas de {dayLabel}</h3>
-            <p className="text-xs text-primary-600 font-medium">{typeLabel}</p>
+            <h3 className="font-bold text-gray-900 text-lg">
+              {initialMeal ? 'Modifier le repas' : `Repas de ${dayLabel}`}
+            </h3>
+            <p className="text-xs text-primary-600 font-medium">{dayLabel} • {typeLabel}</p>
           </div>
           <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-700 rounded-full">
             <X className="w-5 h-5" />
@@ -154,16 +169,18 @@ export default function AddMealModal({ day, type, recipes, onClose, onSave, onDe
               <button
                 type="button"
                 onClick={onDelete}
-                className="px-4 py-2.5 rounded-xl text-red-600 hover:bg-red-50 text-sm font-semibold transition"
+                className="px-3.5 py-2.5 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 text-sm font-semibold transition flex items-center gap-1.5"
+                title="Supprimer ce repas"
               >
-                Supprimer
+                <Trash2 className="w-4 h-4" />
+                <span>Supprimer</span>
               </button>
             )}
             <button
               type="submit"
-              className="flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm shadow-sm transition"
+              className="flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl text-sm shadow-sm transition text-center"
             >
-              Enregistrer au planning
+              {initialMeal ? 'Mettre à jour' : 'Enregistrer au planning'}
             </button>
           </div>
         </form>

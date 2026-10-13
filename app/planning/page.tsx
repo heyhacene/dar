@@ -5,7 +5,7 @@ import Header from '@/components/Header';
 import AddMealModal from '@/components/AddMealModal';
 import { AppData, DayOfWeek, MealType, PlannedMeal } from '@/types';
 import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, Trash2, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 
 const DAYS: { key: DayOfWeek; label: string }[] = [
@@ -56,9 +56,8 @@ export default function PlanningPage() {
     setModalSlot(null);
   };
 
-  const handleDeleteMeal = () => {
-    if (!modalSlot) return;
-    const key = `${modalSlot.day}_${modalSlot.type}`;
+  const handleDirectDelete = (day: DayOfWeek, type: MealType) => {
+    const key = `${day}_${type}`;
     const copy = { ...data.weeklyPlan };
     delete copy[key];
 
@@ -66,26 +65,60 @@ export default function PlanningPage() {
     setData(updated);
     saveLocalData(updated);
     syncWithGoogle(updated);
+  };
+
+  const handleDeleteMeal = () => {
+    if (!modalSlot) return;
+    handleDirectDelete(modalSlot.day, modalSlot.type);
     setModalSlot(null);
   };
+
+  const handleClearWeek = () => {
+    if (!confirm('Voulez-vous vider tous les repas de cette semaine ?')) return;
+    const updated: AppData = {
+      ...data,
+      weeklyPlan: {},
+    };
+    setData(updated);
+    saveLocalData(updated);
+    syncWithGoogle(updated);
+  };
+
+  const hasPlannedMeals = Object.keys(data.weeklyPlan).length > 0;
 
   return (
     <div>
       <Header title="Planning de la semaine" onRefresh={() => syncWithGoogle(data).then(setData)} />
 
       <div className="p-4 space-y-4">
-        {/* Bannière rapide */}
+        {/* Bannière d'actions */}
         <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-md flex items-center justify-between">
           <div>
             <h2 className="font-bold text-base">Menu de la semaine</h2>
-            <p className="text-xs text-orange-100">Associez vos repas du midi et du soir</p>
+            <p className="text-xs text-orange-100">
+              {hasPlannedMeals
+                ? `${Object.keys(data.weeklyPlan).length} repas prévu(s)`
+                : 'Planning vide pour le moment'}
+            </p>
           </div>
-          <Link
-            href="/courses"
-            className="px-3.5 py-1.5 bg-white text-primary-600 font-bold rounded-xl text-xs shadow-sm hover:bg-orange-50 transition"
-          >
-            Courses →
-          </Link>
+          <div className="flex items-center gap-2">
+            {hasPlannedMeals && (
+              <button
+                onClick={handleClearWeek}
+                className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white font-semibold rounded-xl text-xs backdrop-blur-md transition flex items-center gap-1"
+                title="Vider tous les repas de la semaine"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vider</span>
+              </button>
+            )}
+            <Link
+              href="/courses"
+              className="px-3.5 py-1.5 bg-white text-primary-600 font-bold rounded-xl text-xs shadow-sm hover:bg-orange-50 transition"
+            >
+              Courses →
+            </Link>
+          </div>
         </div>
 
         {/* Grille du Lundi au Dimanche */}
@@ -98,22 +131,39 @@ export default function PlanningPage() {
 
             return (
               <div key={key} className="bg-white rounded-2xl border border-gray-100 shadow-xs overflow-hidden">
-                <div className="bg-gray-50/80 px-4 py-2 border-b border-gray-100 font-bold text-sm text-gray-800">
-                  {label}
+                <div className="bg-gray-50/80 px-4 py-2 border-b border-gray-100 font-bold text-sm text-gray-800 flex items-center justify-between">
+                  <span>{label}</span>
+                  {(lunch || dinner) && (
+                    <span className="text-[11px] font-normal text-gray-500">
+                      {[lunch && 'Midi', dinner && 'Soir'].filter(Boolean).join(' • ')}
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 divide-x divide-gray-100 text-sm">
-                  {/* Midi */}
+                  {/* Créneau MIDI */}
                   <div
                     onClick={() => handleOpenSlot(key, 'midi')}
-                    className="p-3 hover:bg-orange-50/30 transition cursor-pointer flex flex-col justify-between min-h-[95px]"
+                    className="p-3 hover:bg-orange-50/30 transition cursor-pointer flex flex-col justify-between min-h-[95px] relative group"
                   >
                     <div className="flex items-center justify-between text-xs text-gray-400 font-medium mb-1">
                       <span>Midi ☀️</span>
                       {lunch && (
-                        <span className="flex items-center gap-0.5 text-primary-600 font-semibold">
-                          <Users className="w-3 h-3" /> {lunch.servings}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex items-center gap-0.5 text-primary-600 font-semibold">
+                            <Users className="w-3 h-3" /> {lunch.servings}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDirectDelete(key, 'midi');
+                            }}
+                            className="text-gray-400 hover:text-red-500 p-0.5 transition"
+                            title="Supprimer ce repas"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -122,9 +172,9 @@ export default function PlanningPage() {
                         <p className="font-semibold text-gray-900 line-clamp-2 text-xs">
                           {lunchRecipe ? lunchRecipe.title : lunch.customTitle}
                         </p>
-                        {lunchRecipe && (
-                          <span className="text-[10px] text-gray-400">Recette du carnet</span>
-                        )}
+                        <span className="text-[10px] text-primary-600/80 font-medium">
+                          {lunchRecipe ? 'Recette du carnet' : 'Plat libre'}
+                        </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-gray-300 text-xs py-2">
@@ -134,17 +184,29 @@ export default function PlanningPage() {
                     )}
                   </div>
 
-                  {/* Soir */}
+                  {/* Créneau SOIR */}
                   <div
                     onClick={() => handleOpenSlot(key, 'soir')}
-                    className="p-3 hover:bg-orange-50/30 transition cursor-pointer flex flex-col justify-between min-h-[95px]"
+                    className="p-3 hover:bg-orange-50/30 transition cursor-pointer flex flex-col justify-between min-h-[95px] relative group"
                   >
                     <div className="flex items-center justify-between text-xs text-gray-400 font-medium mb-1">
                       <span>Soir 🌙</span>
                       {dinner && (
-                        <span className="flex items-center gap-0.5 text-primary-600 font-semibold">
-                          <Users className="w-3 h-3" /> {dinner.servings}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex items-center gap-0.5 text-primary-600 font-semibold">
+                            <Users className="w-3 h-3" /> {dinner.servings}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDirectDelete(key, 'soir');
+                            }}
+                            className="text-gray-400 hover:text-red-500 p-0.5 transition"
+                            title="Supprimer ce repas"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -153,9 +215,9 @@ export default function PlanningPage() {
                         <p className="font-semibold text-gray-900 line-clamp-2 text-xs">
                           {dinnerRecipe ? dinnerRecipe.title : dinner.customTitle}
                         </p>
-                        {dinnerRecipe && (
-                          <span className="text-[10px] text-gray-400">Recette du carnet</span>
-                        )}
+                        <span className="text-[10px] text-primary-600/80 font-medium">
+                          {dinnerRecipe ? 'Recette du carnet' : 'Plat libre'}
+                        </span>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 text-gray-300 text-xs py-2">
@@ -176,6 +238,7 @@ export default function PlanningPage() {
           day={modalSlot.day}
           type={modalSlot.type}
           recipes={data.recipes}
+          initialMeal={data.weeklyPlan[`${modalSlot.day}_${modalSlot.type}`]}
           onClose={() => setModalSlot(null)}
           onSave={handleSaveMeal}
           onDelete={data.weeklyPlan[`${modalSlot.day}_${modalSlot.type}`] ? handleDeleteMeal : undefined}

@@ -3,7 +3,7 @@
 import { AppData } from '@/types';
 import { initialAppData } from './sampleData';
 
-const STORAGE_KEY = 'famille_repas_data_v1';
+const STORAGE_KEY = 'dar_app_data_v2';
 
 export function loadLocalData(): AppData {
   if (typeof window === 'undefined') return initialAppData;
@@ -16,8 +16,8 @@ export function loadLocalData(): AppData {
     const parsed = JSON.parse(raw);
     return {
       recipes: parsed.recipes || initialAppData.recipes,
-      weeklyPlan: parsed.weeklyPlan || initialAppData.weeklyPlan,
-      customShoppingItems: parsed.customShoppingItems || initialAppData.customShoppingItems,
+      weeklyPlan: parsed.weeklyPlan || {},
+      customShoppingItems: parsed.customShoppingItems || [],
       checkedItems: parsed.checkedItems || {},
       lastSync: parsed.lastSync,
     };
@@ -34,6 +34,18 @@ export function saveLocalData(data: AppData): void {
   } catch (err) {
     console.error('Erreur de sauvegarde locale', err);
   }
+}
+
+export function clearAllPlanningData(): AppData {
+  const current = loadLocalData();
+  const cleared: AppData = {
+    ...current,
+    weeklyPlan: {},
+    customShoppingItems: [],
+    checkedItems: {},
+  };
+  saveLocalData(cleared);
+  return cleared;
 }
 
 export async function syncWithGoogle(currentData: AppData): Promise<AppData> {
