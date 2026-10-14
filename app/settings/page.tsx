@@ -20,6 +20,9 @@ import {
   Sparkles,
   Smartphone,
   ExternalLink,
+  Volume2,
+  VolumeX,
+  Music,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import {
@@ -27,6 +30,11 @@ import {
   getNotificationPermission,
   requestNotificationPermission,
   sendLocalNotification,
+  getNotificationSoundPreference,
+  setNotificationSoundPreference,
+  playNotificationSound,
+  NOTIFICATION_SOUNDS,
+  NotificationSoundType,
 } from '@/lib/notifications';
 
 export default function SettingsPage() {
@@ -34,6 +42,10 @@ export default function SettingsPage() {
   const { preference, setPreference } = useTheme();
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
   const [testSent, setTestSent] = useState(false);
+
+  // Préférences sonores des notifications
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundType, setSoundType] = useState<NotificationSoundType>('chime');
 
   // Mises à jour
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -44,6 +56,9 @@ export default function SettingsPage() {
     if (isNotificationSupported()) {
       setNotifPermission(getNotificationPermission());
     }
+    const soundPref = getNotificationSoundPreference();
+    setSoundEnabled(soundPref.enabled);
+    setSoundType(soundPref.sound);
   }, []);
 
   async function handleForceUpdate() {
@@ -147,13 +162,13 @@ export default function SettingsPage() {
             </button>
 
             <a
-              href="https://github.com/heyhacene/dar/actions"
+              href="https://github.com/heyhacene/dar/releases/latest/download/Dar.apk"
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
             >
-              <Smartphone className="w-4 h-4" />
-              <span>Télécharger le nouvel APK Android (GitHub)</span>
+              <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <span>Télécharger directement l'APK Android (Dar.apk)</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-60" />
             </a>
           </div>
@@ -192,12 +207,12 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* NOTIFICATIONS */}
-        <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl border border-gray-100 dark:border-slate-700 shadow-sm space-y-3">
+        {/* NOTIFICATIONS & SONS */}
+        <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl border border-gray-100 dark:border-slate-700 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-              <h2 className="font-bold text-sm text-gray-900 dark:text-white">Notifications</h2>
+              <h2 className="font-bold text-sm text-gray-900 dark:text-white">Notifications & Sons</h2>
             </div>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
@@ -209,7 +224,7 @@ export default function SettingsPage() {
               }`}
             >
               {notifPermission === 'granted'
-                ? 'Activées'
+                ? 'Volet actif'
                 : notifPermission === 'denied'
                 ? 'Bloquées'
                 : 'Non activées'}
@@ -217,52 +232,139 @@ export default function SettingsPage() {
           </div>
 
           <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-            Recevez des alertes lors de nouveaux messages de la famille ou pour les rappels de l'agenda.
+            Recevez les alertes de nouveaux messages et d'événements directement dans le volet de notification de votre téléphone avec une sonnerie personnalisée.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            {notifPermission !== 'granted' ? (
-              <button
-                type="button"
-                onClick={async () => {
-                  const perm = await requestNotificationPermission();
-                  setNotifPermission(perm);
-                  if (perm === 'granted') {
-                    sendLocalNotification('Notifications activées ! 🎉', {
-                      body: 'Vous recevrez les alertes de nouveaux messages et d’agenda.',
-                    });
-                  }
-                }}
-                className="py-2.5 px-3 rounded-2xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition flex items-center justify-center gap-1.5 shadow-xs"
-              >
-                <BellRing className="w-4 h-4" />
-                <span>Activer les notifications sur cet appareil</span>
-              </button>
-            ) : (
+          {notifPermission !== 'granted' && (
+            <button
+              type="button"
+              onClick={async () => {
+                const perm = await requestNotificationPermission();
+                setNotifPermission(perm);
+                if (perm === 'granted') {
+                  sendLocalNotification('Notifications activées ! 🎉', {
+                    body: 'Vous recevrez les alertes de nouveaux messages et d’agenda dans le volet.',
+                  });
+                }
+              }}
+              className="w-full py-2.5 px-3 rounded-2xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition flex items-center justify-center gap-1.5 shadow-xs"
+            >
+              <BellRing className="w-4 h-4" />
+              <span>Activer les notifications dans le volet de l'appareil</span>
+            </button>
+          )}
+
+          {/* RÉGLAGE DU SON */}
+          <div className="pt-2 border-t border-gray-100 dark:border-slate-700 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {soundEnabled ? (
+                  <Volume2 className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-gray-400" />
+                )}
+                <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                  Sonnerie des notifications
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => {
-                  sendLocalNotification('Test de notification Dar 🔔', {
-                    body: 'La messagerie et les alertes fonctionnent parfaitement !',
-                  });
-                  setTestSent(true);
-                  setTimeout(() => setTestSent(false), 3000);
+                  const next = !soundEnabled;
+                  setSoundEnabled(next);
+                  setNotificationSoundPreference(next, soundType);
+                  if (next) playNotificationSound(soundType);
                 }}
-                className="py-2.5 px-3 rounded-2xl bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-200 text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                className={`px-3 py-1 rounded-full text-xs font-bold transition flex items-center gap-1 ${
+                  soundEnabled
+                    ? 'bg-primary-100 text-primary-700 dark:bg-primary-950 dark:text-primary-300'
+                    : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-gray-400'
+                }`}
               >
-                {testSent ? (
-                  <>
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span className="text-emerald-700 dark:text-emerald-300">Notification envoyée !</span>
-                  </>
-                ) : (
-                  <>
-                    <BellRing className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-                    <span>Envoyer une notification test</span>
-                  </>
-                )}
+                {soundEnabled ? 'Son activé' : 'Muet'}
               </button>
+            </div>
+
+            {soundEnabled && (
+              <div className="space-y-2">
+                <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400">
+                  Choisir la mélodie :
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {NOTIFICATION_SOUNDS.map((s) => {
+                    const isSelected = soundType === s.id;
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          setSoundType(s.id);
+                          setNotificationSoundPreference(true, s.id);
+                          playNotificationSound(s.id);
+                        }}
+                        className={`p-2.5 rounded-2xl border text-left cursor-pointer transition flex items-center justify-between ${
+                          isSelected
+                            ? 'border-primary-500 bg-orange-50/70 dark:bg-primary-950/40 text-primary-900 dark:text-primary-100 ring-1 ring-primary-500'
+                            : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 bg-gray-50/60 dark:bg-slate-750'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 pr-1">
+                          <div className="font-bold text-xs truncate flex items-center gap-1">
+                            <Music className="w-3 h-3 opacity-60 flex-shrink-0" />
+                            <span>{s.name}</span>
+                          </div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                            {s.description}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playNotificationSound(s.id);
+                          }}
+                          title="Écouter"
+                          className="w-7 h-7 rounded-xl bg-white dark:bg-slate-700 shadow-2xs flex items-center justify-center text-primary-600 dark:text-primary-300 hover:scale-105 active:scale-95 transition flex-shrink-0"
+                        >
+                          ▶
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
+          </div>
+
+          {/* BOUTON TEST NOTIFICATION + VOLET */}
+          <div className="pt-2 border-t border-gray-100 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                sendLocalNotification('Notification de test Dar 🔔', {
+                  body: `La notification apparaît dans votre volet avec la sonnerie « ${
+                    NOTIFICATION_SOUNDS.find((s) => s.id === soundType)?.name || 'Carillon'
+                  } » !`,
+                  sound: soundEnabled,
+                });
+                setTestSent(true);
+                setTimeout(() => setTestSent(false), 3000);
+              }}
+              className="w-full py-2.5 px-3 rounded-2xl bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-200 text-xs font-semibold transition flex items-center justify-center gap-1.5"
+            >
+              {testSent ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="text-emerald-700 dark:text-emerald-300">
+                    Notification envoyée dans le volet !
+                  </span>
+                </>
+              ) : (
+                <>
+                  <BellRing className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+                  <span>Tester la sonnerie et l'apparition dans le volet</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 

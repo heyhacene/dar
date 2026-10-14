@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, FamilyEvent, Profile } from '@/lib/supabase';
@@ -18,8 +18,12 @@ import {
   X,
   Users,
   User,
+  UploadCloud,
+  Download,
+  FileUp,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { parseICS, generateICS, ParsedICSEvent } from '@/lib/icsParser';
 
 type CalendarViewMode = 'jour' | 'semaine' | 'mois' | 'annee';
 
@@ -120,6 +124,14 @@ export default function AgendaPage() {
   const [allDay, setAllDay] = useState(true);
   const [category, setCategory] = useState<FamilyEvent['category']>('famille');
   const [assignedMemberIds, setAssignedMemberIds] = useState<string[]>([]);
+
+  // Import et Export de fichiers calendriers (.ics)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importedEvents, setImportedEvents] = useState<ParsedICSEvent[]>([]);
+  const [selectedImportIndices, setSelectedImportIndices] = useState<number[]>([]);
+  const [importFileName, setImportFileName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   // Charger les profils de la famille
   useEffect(() => {
@@ -235,6 +247,129 @@ export default function AgendaPage() {
     } catch (err) {
       console.error(err);
     }
+  }
+
+  // Lecture et traitement du fichier .ics
+  function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    readAndParseICS(file);
+    e.target.value = '';
+  }
+
+  function readAndParseICS(file: File) {
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (!text) return;
+      try {
+        const parsed = parseICS(text);
+        if (parsed.length === 0) {
+          alert('Aucun événement valide trouvé dans ce fichier .ics.');
+          return;
+        }
+        setImportedEvents(parsed);
+        setSelectedImportIndices(parsed.map((_, i) => i)); // Sélectionner tout par défaut
+        setShowImportModal(true);
+      } catch (err) {
+        console.error('Erreur lecture ICS:', err);
+        alert('Impossible de lire ce fichier calendrier .ics.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // Écoute de l'ouverture de fichiers .ics via l'OS (PWA file_handlers) ou Glisser-Déposer
+  useEffect(() => {
+    // 1. Web / PWA LaunchQueue API
+    if (typeof window !== 'undefined' && 'launchQueue' in window && (window as any).launchQueue?.setConsumer) {
+      (window as any).launchQueue.setConsumer(async (launchParams: any) => {
+        if (!launchParams?.files?.length) return;
+        try {
+          const fileHandle = launchParams.files[0];
+          const file = await fileHandle.getFile();
+          if (file) {
+            readAndParseICS(file);
+          }
+        } catch (err) {
+          console.error('Erreur launchQueue file handling:', err);
+        }
+      });
+    }
+
+    // 2. Glisser-déposer (Drag & Drop) d'un fichier .ics directement sur la page
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        if (file.name.toLowerCase().endsWith('.ics') || file.type.includes('calendar')) {
+          readAndParseICS(file);
+        }
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, []);
+  async function handleConfirmImport() {
+    if (!user || selectedImportIndices.length === 0) return;
+    setIsImporting(true);
+
+    try {
+      const toInsert = selectedImportIndices.map((idx) => {
+        const evt = importedEvents[idx];
+        const catObj = CATEGORIES.find((c) => c.key === evt.category);
+        return {
+          title: evt.title.trim(),
+          description: evt.description || null,
+          start_date: evt.startDate.toISOString(),
+          end_date: evt.endDate ? evt.endDate.toISOString() : null,
+          all_day: evt.allDay,
+          category: evt.category,
+          color: catObj?.color || '#ee7318',
+          created_by: user.id,
+        };
+      });
+
+      const { error } = await supabase.from('events').insert(toInsert);
+      if (error) throw error;
+
+      setShowImportModal(false);
+      setImportedEvents([]);
+      setSelectedImportIndices([]);
+      await loadEvents();
+      alert(`🎉 ${toInsert.length} événement(s) importé(s) avec succès dans l'agenda partagé !`);
+    } catch (err: any) {
+      console.error('Erreur import événements:', err);
+      alert('Erreur lors de l’importation : ' + (err?.message || 'Erreur inconnue'));
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  // Exporter l'agenda au format standard .ics
+  function handleExportICS() {
+    if (events.length === 0) {
+      alert('Aucun événement à exporter pour le moment.');
+      return;
+    }
+    const icsContent = generateICS(events);
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dar-agenda-famille-${new Date().toISOString().slice(0, 10)}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // Navigation dans le temps (Précédent / Suivant / Aujourd'hui)
@@ -409,13 +544,39 @@ export default function AgendaPage() {
             </button>
           </div>
 
-          <button
-            onClick={() => handleOpenAddModal()}
-            className="py-2 px-3 bg-primary-600 text-white font-bold rounded-xl text-xs hover:bg-primary-700 transition flex items-center gap-1 shadow-xs whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Ajouter</span>
-          </button>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".ics,text/calendar"
+              onChange={handleFileSelected}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="py-2 px-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-200 font-bold rounded-xl text-xs hover:bg-gray-50 dark:hover:bg-slate-700 transition flex items-center gap-1 shadow-xs"
+              title="Importer un fichier calendrier .ics (Doctolib, Apple, Google, école...)"
+            >
+              <UploadCloud className="w-4 h-4 text-primary-600 dark:text-primary-400" />
+              <span className="hidden sm:inline">Importer .ics</span>
+            </button>
+
+            <button
+              onClick={handleExportICS}
+              className="p-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-gray-300 font-bold rounded-xl text-xs hover:bg-gray-50 dark:hover:bg-slate-700 transition shadow-xs"
+              title="Exporter l'agenda au format .ics"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => handleOpenAddModal()}
+              className="py-2 px-3 bg-primary-600 text-white font-bold rounded-xl text-xs hover:bg-primary-700 transition flex items-center gap-1 shadow-xs whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Ajouter</span>
+            </button>
+          </div>
         </div>
 
         {/* FILTRE PAR MEMBRE DE LA FAMILLE */}
@@ -1071,6 +1232,156 @@ export default function AgendaPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL D'IMPORTATION DE FICHIER .ICS */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 animate-fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-gray-100 dark:border-slate-700 overflow-hidden">
+            {/* Header de la modale */}
+            <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between flex-shrink-0 bg-primary-50/50 dark:bg-primary-950/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400 flex items-center justify-center font-bold">
+                  <FileUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+                    Importer dans l'agenda
+                  </h3>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate max-w-[240px]">
+                    {importFileName || 'Fichier .ics'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Barre de sélection globale */}
+            <div className="px-4 py-2 bg-gray-50 dark:bg-slate-750 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between text-xs flex-shrink-0">
+              <span className="text-gray-600 dark:text-gray-300 font-medium">
+                {importedEvents.length} événement{importedEvents.length > 1 ? 's' : ''} trouvé{importedEvents.length > 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedImportIndices.length === importedEvents.length) {
+                    setSelectedImportIndices([]);
+                  } else {
+                    setSelectedImportIndices(importedEvents.map((_, i) => i));
+                  }
+                }}
+                className="text-primary-600 dark:text-primary-400 font-bold hover:underline"
+              >
+                {selectedImportIndices.length === importedEvents.length
+                  ? 'Tout désélectionner'
+                  : 'Tout sélectionner'}
+              </button>
+            </div>
+
+            {/* Liste défilable des événements */}
+            <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+              {importedEvents.map((evt, idx) => {
+                const isChecked = selectedImportIndices.includes(idx);
+                const catObj = CATEGORIES.find((c) => c.key === evt.category);
+                const dateDisplay = evt.startDate.toLocaleDateString('fr-FR', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                const timeDisplay = evt.allDay
+                  ? 'Journée entière'
+                  : `${String(evt.startDate.getHours()).padStart(2, '0')}:${String(
+                      evt.startDate.getMinutes()
+                    ).padStart(2, '0')}`;
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => {
+                      setSelectedImportIndices((prev) =>
+                        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+                      );
+                    }}
+                    className={`p-3 rounded-2xl border transition cursor-pointer flex items-start gap-3 ${
+                      isChecked
+                        ? 'border-primary-500 bg-orange-50/40 dark:bg-primary-950/20'
+                        : 'border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-750 opacity-60'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => {}}
+                      className="mt-1 rounded text-primary-600 focus:ring-primary-500 pointer-events-none"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            catObj?.color || 'bg-gray-500 text-white'
+                          }`}
+                        >
+                          {catObj?.label || 'Autre'}
+                        </span>
+                        <span className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1 font-medium">
+                          <Clock className="w-3 h-3" />
+                          {dateDisplay} • {timeDisplay}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-xs text-gray-900 dark:text-white truncate">
+                        {evt.title}
+                      </h4>
+                      {evt.location && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                          📍 {evt.location}
+                        </p>
+                      )}
+                      {evt.description && (
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">
+                          {evt.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer de la modale */}
+            <div className="p-3.5 bg-gray-50 dark:bg-slate-750 border-t border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                disabled={isImporting}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImport}
+                disabled={isImporting || selectedImportIndices.length === 0}
+                className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 disabled:opacity-50 transition shadow-sm flex items-center justify-center gap-1.5"
+              >
+                {isImporting ? (
+                  <span>Importation en cours...</span>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Importer ({selectedImportIndices.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

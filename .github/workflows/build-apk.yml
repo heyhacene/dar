@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Dar Android APK
@@ -53,3 +56,15 @@ jobs:
           name: Dar-Android-APK
           path: build-output/Dar.apk
           retention-days: 30
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: latest
+          name: "Dar (Dernière version APK Android)"
+          body: "Cliquez sur **Dar.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android."
+          files: build-output/Dar.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dar-v11';
+const CACHE_NAME = 'dar-v12';
 
 // Fichiers clés à pré-mettre en cache pour fonctionnement hors-ligne immédiat
 const PRECACHE_URLS = [
@@ -10,6 +10,8 @@ const PRECACHE_URLS = [
   '/agenda',
   '/manifest.json',
   '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {

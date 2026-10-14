@@ -7,6 +7,7 @@ import { AuthProvider } from '@/lib/authContext';
 import FamilyAlertBanner from '@/components/FamilyAlertBanner';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import AppUpdateNotifier from '@/components/AppUpdateNotifier';
+import GlobalNotificationListener from '@/components/GlobalNotificationListener';
 
 export const metadata: Metadata = {
   title: 'Dar | Espace Familial',
@@ -64,6 +65,7 @@ export default function RootLayout({
         <AuthProvider>
           <ServiceWorkerRegister />
           <AppUpdateNotifier />
+          <GlobalNotificationListener />
           <FamilyAlertBanner />
           <main className="flex-1">{children}</main>
           <BottomNav />
