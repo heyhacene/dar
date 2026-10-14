@@ -28,6 +28,9 @@ import { useTheme } from '@/lib/theme';
 import {
   isNotificationSupported,
   getNotificationPermission,
+  getNotificationPermissionStatus,
+  getSystemNotificationPreference,
+  setSystemNotificationPreference,
   requestNotificationPermission,
   sendLocalNotification,
   getNotificationSoundPreference,
@@ -41,6 +44,7 @@ export default function SettingsPage() {
   const [data, setData] = useState<AppData | null>(null);
   const { preference, setPreference } = useTheme();
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+  const [systemNotifEnabled, setSystemNotifEnabled] = useState(false);
   const [testSent, setTestSent] = useState(false);
 
   // Préférences sonores des notifications
@@ -54,12 +58,40 @@ export default function SettingsPage() {
   useEffect(() => {
     setData(loadLocalData());
     if (isNotificationSupported()) {
-      setNotifPermission(getNotificationPermission());
+      getNotificationPermissionStatus().then((perm) => {
+        setNotifPermission(perm);
+        const pref = getSystemNotificationPreference();
+        setSystemNotifEnabled(pref && perm === 'granted');
+      });
     }
     const soundPref = getNotificationSoundPreference();
     setSoundEnabled(soundPref.enabled);
     setSoundType(soundPref.sound);
   }, []);
+
+  async function handleToggleSystemNotifications() {
+    if (!systemNotifEnabled) {
+      const perm = await requestNotificationPermission();
+      setNotifPermission(perm);
+
+      if (perm === 'granted') {
+        setSystemNotifEnabled(true);
+        setSystemNotificationPreference(true);
+        await sendLocalNotification('Notifications activées ! 🎉', {
+          body: 'Le volet de notification de votre appareil est désormais connecté à Dar.',
+        });
+      } else {
+        setSystemNotifEnabled(false);
+        setSystemNotificationPreference(false);
+        alert(
+          "Les notifications sont bloquées par votre appareil ou navigateur.\n\nPour les activer, ouvrez les Paramètres de votre téléphone > Applications > Dar > Notifications et cochez 'Autoriser'."
+        );
+      }
+    } else {
+      setSystemNotifEnabled(false);
+      setSystemNotificationPreference(false);
+    }
+  }
 
   async function handleForceUpdate() {
     setCheckingUpdate(true);
@@ -216,43 +248,54 @@ export default function SettingsPage() {
             </div>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                notifPermission === 'granted'
+                systemNotifEnabled && notifPermission === 'granted'
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   : notifPermission === 'denied'
                   ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
                   : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300'
               }`}
             >
-              {notifPermission === 'granted'
+              {systemNotifEnabled && notifPermission === 'granted'
                 ? 'Volet actif'
                 : notifPermission === 'denied'
-                ? 'Bloquées'
-                : 'Non activées'}
+                ? 'Bloqué'
+                : 'Désactivé'}
             </span>
           </div>
 
-          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-            Recevez les alertes de nouveaux messages et d'événements directement dans le volet de notification de votre téléphone avec une sonnerie personnalisée.
-          </p>
+          {/* INTERRUPTEUR BASCULE ON / OFF DU VOLET DE NOTIFICATION */}
+          <div className="bg-gray-50 dark:bg-slate-750 p-3.5 rounded-2xl border border-gray-100 dark:border-slate-700 flex items-center justify-between gap-3">
+            <div className="space-y-0.5 flex-1 pr-2">
+              <div className="flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                <span className="text-xs font-bold text-gray-900 dark:text-white">
+                  Volet de notification de l'appareil
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+                Afficher une alerte dans la barre supérieure de votre téléphone lors de nouveaux messages ou rendez-vous.
+              </p>
+            </div>
 
-          {notifPermission !== 'granted' && (
+            {/* BOUTON POUSSOIR ON / OFF */}
             <button
               type="button"
-              onClick={async () => {
-                const perm = await requestNotificationPermission();
-                setNotifPermission(perm);
-                if (perm === 'granted') {
-                  sendLocalNotification('Notifications activées ! 🎉', {
-                    body: 'Vous recevrez les alertes de nouveaux messages et d’agenda dans le volet.',
-                  });
-                }
-              }}
-              className="w-full py-2.5 px-3 rounded-2xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition flex items-center justify-center gap-1.5 shadow-xs"
+              role="switch"
+              aria-checked={systemNotifEnabled && notifPermission === 'granted'}
+              onClick={handleToggleSystemNotifications}
+              className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                systemNotifEnabled && notifPermission === 'granted'
+                  ? 'bg-emerald-500'
+                  : 'bg-gray-300 dark:bg-slate-600'
+              }`}
             >
-              <BellRing className="w-4 h-4" />
-              <span>Activer les notifications dans le volet de l'appareil</span>
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  systemNotifEnabled && notifPermission === 'granted' ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
             </button>
-          )}
+          </div>
 
           {/* RÉGLAGE DU SON */}
           <div className="pt-2 border-t border-gray-100 dark:border-slate-700 space-y-3">

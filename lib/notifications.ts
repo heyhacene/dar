@@ -1,5 +1,8 @@
 'use client';
 
+import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
 export type NotificationSoundType = 'chime' | 'bell' | 'pop' | 'harp';
 
 export interface NotificationSoundOption {
@@ -15,26 +18,144 @@ export const NOTIFICATION_SOUNDS: NotificationSoundOption[] = [
   { id: 'harp', name: 'Arpège zen', description: 'Cascade de 4 notes apaisantes' },
 ];
 
-export function isNotificationSupported(): boolean {
-  return typeof window !== 'undefined' && 'Notification' in window;
-}
-
-export function getNotificationPermission(): NotificationPermission {
-  if (!isNotificationSupported()) return 'denied';
-  return Notification.permission;
-}
-
-export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (!isNotificationSupported()) return 'denied';
+/**
+ * Initialisation de l'écouteur de clic sur notification native (Capacitor)
+ */
+if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
   try {
-    const perm = await Notification.requestPermission();
-    return perm;
-  } catch (err) {
-    console.error('Erreur demande permission notifications:', err);
-    return 'denied';
+    LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+      const url = action.notification.extra?.url;
+      if (url && typeof window !== 'undefined') {
+        window.location.href = url;
+      }
+    });
+  } catch (e) {
+    // Non bloquant
   }
 }
 
+/**
+ * Vérifie si les notifications sont supportées (Capacitor natif ou Web Notifications)
+ */
+export function isNotificationSupported(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (Capacitor.isNativePlatform()) return true;
+  return 'Notification' in window;
+}
+
+/**
+ * Retourne le statut de la permission système ('granted', 'denied', 'default')
+ */
+export async function getNotificationPermissionStatus(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined') return 'denied';
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const check = await LocalNotifications.checkPermissions();
+      if (check.display === 'granted') return 'granted';
+      if (check.display === 'denied') return 'denied';
+      return 'default';
+    } catch {
+      return 'default';
+    }
+  }
+
+  if ('Notification' in window) {
+    return Notification.permission;
+  }
+  return 'denied';
+}
+
+/**
+ * Version synchrone pour rendu initial rapide (avec secours Web)
+ */
+export function getNotificationPermission(): NotificationPermission {
+  if (typeof window === 'undefined') return 'denied';
+  if (Capacitor.isNativePlatform()) {
+    const cached = localStorage.getItem('dar_native_notif_perm');
+    return (cached as NotificationPermission) || 'default';
+  }
+  if ('Notification' in window) {
+    return Notification.permission;
+  }
+  return 'denied';
+}
+
+/**
+ * Demande la permission d'afficher des notifications dans le volet du système
+ */
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  if (typeof window === 'undefined') return 'denied';
+
+  // 1. Environnement Android Natif (Capacitor)
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const req = await LocalNotifications.requestPermissions();
+      const status: NotificationPermission =
+        req.display === 'granted' ? 'granted' : req.display === 'denied' ? 'denied' : 'default';
+
+      localStorage.setItem('dar_native_notif_perm', status);
+
+      if (status === 'granted') {
+        localStorage.setItem('dar_system_notif_enabled', 'true');
+        // Initialiser le canal de notification Android haute priorité
+        await LocalNotifications.createChannel({
+          id: 'dar_alerts',
+          name: 'Alertes Dar',
+          description: 'Messages de la famille, rappels calendrier et tâches',
+          importance: 5, // IMPORTANCE_HIGH (bannière flottante + volet de notification)
+          visibility: 1, // PUBLIC
+          vibration: true,
+          lights: true,
+          lightColor: '#ee7318',
+        });
+      }
+      return status;
+    } catch (err) {
+      console.warn('Erreur demande permission native Capacitor:', err);
+      return 'denied';
+    }
+  }
+
+  // 2. Environnement Navigateur / PWA
+  if ('Notification' in window) {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        localStorage.setItem('dar_system_notif_enabled', 'true');
+      }
+      return perm;
+    } catch (err) {
+      console.error('Erreur demande permission notifications:', err);
+      return 'denied';
+    }
+  }
+
+  return 'denied';
+}
+
+/**
+ * Préférence utilisateur pour le volet de notification (Bouton poussoir ON/OFF)
+ */
+export function getSystemNotificationPreference(): boolean {
+  if (typeof window === 'undefined') return false;
+  const stored = localStorage.getItem('dar_system_notif_enabled');
+  if (stored !== null) {
+    return stored === 'true';
+  }
+  // Par défaut, activé si la permission est déjà accordée
+  const perm = getNotificationPermission();
+  return perm === 'granted';
+}
+
+export function setSystemNotificationPreference(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('dar_system_notif_enabled', enabled ? 'true' : 'false');
+}
+
+/**
+ * Préférences pour le son des notifications
+ */
 export function getNotificationSoundPreference(): { enabled: boolean; sound: NotificationSoundType } {
   if (typeof window === 'undefined') {
     return { enabled: true, sound: 'chime' };
@@ -54,7 +175,7 @@ export function setNotificationSoundPreference(enabled: boolean, sound: Notifica
 }
 
 /**
- * Joue la tonalité audio synthétisée choisie via Web Audio API (sans fichier externe, 100% hors-ligne)
+ * Joue la tonalité audio synthétisée choisie via Web Audio API (100% hors-ligne)
  */
 export function playNotificationSound(soundType?: NotificationSoundType) {
   if (typeof window === 'undefined') return;
@@ -70,7 +191,6 @@ export function playNotificationSound(soundType?: NotificationSoundType) {
     const ctx = new AudioContextClass();
 
     if (chosen === 'chime') {
-      // 3 notes douces ascendantes (C5, E5, G5)
       const notes = [523.25, 659.25, 783.99];
       notes.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
@@ -86,7 +206,6 @@ export function playNotificationSound(soundType?: NotificationSoundType) {
         osc.stop(ctx.currentTime + idx * 0.12 + 0.4);
       });
     } else if (chosen === 'bell') {
-      // Clochette avec harmonique
       const osc1 = ctx.createOscillator();
       const osc2 = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -104,7 +223,6 @@ export function playNotificationSound(soundType?: NotificationSoundType) {
       osc1.stop(ctx.currentTime + 0.65);
       osc2.stop(ctx.currentTime + 0.65);
     } else if (chosen === 'pop') {
-      // Pop moderne
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -117,7 +235,6 @@ export function playNotificationSound(soundType?: NotificationSoundType) {
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.16);
     } else if (chosen === 'harp') {
-      // Cascade arpège 4 notes
       const notes = [440, 554.37, 659.25, 880];
       notes.forEach((freq, idx) => {
         const osc = ctx.createOscillator();
@@ -143,24 +260,79 @@ export function playNotificationSound(soundType?: NotificationSoundType) {
  */
 export async function sendLocalNotification(
   title: string,
-  options: NotificationOptions & { url?: string; sound?: boolean } = {}
+  options: {
+    body?: string;
+    url?: string;
+    sound?: boolean;
+    tag?: string;
+    data?: any;
+    icon?: string;
+  } = {}
 ) {
-  // 1. Déclencher la sonnerie configurée si activée
+  // 1. Déclencher la sonnerie audio si activée
   if (options.sound !== false) {
     playNotificationSound();
   }
 
-  // Si pas de permission ou non supporté, s'arrêter après le son
-  if (!isNotificationSupported() || Notification.permission !== 'granted') return;
+  // 2. Vérifier si l'utilisateur a activé le bouton poussoir du volet système
+  if (!getSystemNotificationPreference()) {
+    return;
+  }
 
-  const defaultOptions: NotificationOptions = {
-    icon: '/icon-192.png',
+  // 3. Cas A : Application Android Native (Capacitor)
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const perm = await LocalNotifications.checkPermissions();
+      if (perm.display !== 'granted') {
+        const requested = await LocalNotifications.requestPermissions();
+        if (requested.display !== 'granted') return;
+      }
+
+      await LocalNotifications.createChannel({
+        id: 'dar_alerts',
+        name: 'Alertes Dar',
+        description: 'Messages, agenda et alertes familiales',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+        lights: true,
+        lightColor: '#ee7318',
+      });
+
+      const notifId = Math.floor(Math.random() * 900000) + 100000;
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: notifId,
+            title: title,
+            body: options.body || '',
+            channelId: 'dar_alerts',
+            smallIcon: 'ic_launcher',
+            extra: {
+              url: options.url || '/',
+            },
+          },
+        ],
+      });
+      return;
+    } catch (err) {
+      console.warn('Erreur notification native Capacitor:', err);
+    }
+  }
+
+  // 4. Cas B : Web / PWA Navigateur
+  if (!('Notification' in window) || Notification.permission !== 'granted') {
+    return;
+  }
+
+  const defaultOptions: any = {
+    body: options.body || '',
+    icon: options.icon || '/icon-192.png',
     badge: '/icon-192.png',
     vibrate: [200, 100, 200, 100, 200],
     tag: options.tag || `dar-notif-${Date.now()}`,
     renotify: true,
     requireInteraction: false,
-    ...options,
     data: {
       url: options.url || '/messages',
       ...(options.data || {}),
@@ -168,7 +340,6 @@ export async function sendLocalNotification(
   };
 
   try {
-    // Service Worker showNotification : obligatoire pour le volet de notification sur mobile / PWA
     if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.ready;
       if (reg && 'showNotification' in reg) {
@@ -176,8 +347,6 @@ export async function sendLocalNotification(
         return;
       }
     }
-
-    // Fallback navigateur classique
     new Notification(title, defaultOptions);
   } catch (err) {
     console.warn('Impossible d’afficher la notification dans le volet système:', err);
