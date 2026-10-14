@@ -1,17 +1,92 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Profile } from '@/lib/supabase';
-import { Users, UserPlus, CheckCircle, XCircle, Shield, LogOut, MessageSquare, Clock, AlertCircle, Eye, EyeOff, Sun, Moon, Monitor, Palette, Settings as SettingsIcon, KeyRound, SlidersHorizontal, Edit2, Check, X, ShieldAlert, ShieldCheck, UserX, UserCheck } from 'lucide-react';
+import {
+  Users,
+  UserPlus,
+  CheckCircle,
+  XCircle,
+  Shield,
+  LogOut,
+  MessageSquare,
+  Clock,
+  AlertCircle,
+  Eye,
+  EyeOff,
+  Sun,
+  Moon,
+  Monitor,
+  Palette,
+  Settings as SettingsIcon,
+  KeyRound,
+  SlidersHorizontal,
+  Edit2,
+  Check,
+  X,
+  ShieldAlert,
+  ShieldCheck,
+  UserX,
+  UserCheck,
+  Camera,
+  Upload,
+  Smile,
+  Trash2,
+  Sparkles,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from '@/lib/theme';
 
+const PRESET_EMOJIS = [
+  '👨', '🧔', '👩', '👱‍♀️', '👧', '👦', '👶', '👵', '👴', '🧕',
+  '🐱', '🐶', '🦊', '🐻', '🐼', '🦁', '🐯', '🐨', '🦄', '🌸',
+  '🍕', '🍔', '🥞', '☕', '⚽', '🎸', '🎮', '🚀', '⭐', '❤️', '🕶️', '👑'
+];
+
+function renderAvatar(
+  p?: { avatar_url?: string; full_name?: string },
+  sizeClass = 'w-10 h-10',
+  textSizeClass = 'text-sm'
+) {
+  const isPhoto =
+    p?.avatar_url &&
+    (p.avatar_url.startsWith('data:image') || p.avatar_url.startsWith('http'));
+  const isEmoji = p?.avatar_url && !isPhoto;
+  const initial = p?.full_name ? p.full_name[0].toUpperCase() : 'U';
+
+  if (isPhoto) {
+    return (
+      <img
+        src={p!.avatar_url}
+        alt=""
+        className={`${sizeClass} rounded-full object-cover shadow-xs`}
+      />
+    );
+  }
+  if (isEmoji) {
+    return (
+      <div
+        className={`${sizeClass} rounded-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center flex-shrink-0 shadow-xs leading-none`}
+      >
+        <span className={textSizeClass}>{p!.avatar_url}</span>
+      </div>
+    );
+  }
+  return (
+    <div
+      className={`${sizeClass} rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white font-bold flex items-center justify-center flex-shrink-0 shadow-xs ${textSizeClass}`}
+    >
+      {initial}
+    </div>
+  );
+}
+
 export default function FamillePage() {
   const router = useRouter();
-  const { user, profile, isAdmin, signOut, loading: authLoading } = useAuth();
+  const { user, profile, isAdmin, signOut, loading: authLoading, refreshProfile } = useAuth();
   const { preference, setPreference } = useTheme();
 
   useEffect(() => {
@@ -24,6 +99,13 @@ export default function FamillePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Avatar Modal
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [avatarSuccess, setAvatarSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Formulaire d'ajout direct par l'Admin
   const [showAddForm, setShowAddForm] = useState(false);
@@ -46,6 +128,113 @@ export default function FamillePage() {
   const [pwdLoading, setPwdLoading] = useState(false);
   const [pwdError, setPwdError] = useState<string | null>(null);
   const [pwdSuccess, setPwdSuccess] = useState<string | null>(null);
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setAvatarLoading(true);
+    setAvatarError(null);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = async () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const maxDim = 160;
+            const width = img.width;
+            const height = img.height;
+
+            const minDim = Math.min(width, height);
+            const sx = (width - minDim) / 2;
+            const sy = (height - minDim) / 2;
+
+            canvas.width = maxDim;
+            canvas.height = maxDim;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, maxDim, maxDim);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+
+              const { error: upErr } = await supabase
+                .from('profiles')
+                .update({ avatar_url: dataUrl })
+                .eq('id', user.id);
+
+              if (upErr) throw upErr;
+
+              await refreshProfile();
+              await fetchMembers();
+              setAvatarSuccess('Photo de profil mise à jour !');
+              setTimeout(() => {
+                setShowAvatarModal(false);
+                setAvatarSuccess(null);
+              }, 1200);
+            }
+          } catch (err: any) {
+            console.error('Erreur redimensionnement image:', err);
+            setAvatarError('Impossible de traiter la photo.');
+          } finally {
+            setAvatarLoading(false);
+          }
+        };
+        img.onerror = () => {
+          setAvatarError('Fichier image invalide.');
+          setAvatarLoading(false);
+        };
+        img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      console.error('Erreur upload avatar:', err);
+      setAvatarError('Erreur lors du chargement de l’image.');
+      setAvatarLoading(false);
+    }
+  }
+
+  async function handleSelectEmoji(emoji: string) {
+    if (!user) return;
+    setAvatarLoading(true);
+    setAvatarError(null);
+    try {
+      const { error: upErr } = await supabase
+        .from('profiles')
+        .update({ avatar_url: emoji })
+        .eq('id', user.id);
+
+      if (upErr) throw upErr;
+
+      await refreshProfile();
+      await fetchMembers();
+      setAvatarSuccess('Avatar emoji sélectionné !');
+      setTimeout(() => {
+        setShowAvatarModal(false);
+        setAvatarSuccess(null);
+      }, 1000);
+    } catch (err: any) {
+      console.error(err);
+      setAvatarError('Erreur lors de la sélection de l’emoji.');
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    if (!user) return;
+    setAvatarLoading(true);
+    try {
+      await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id);
+      await refreshProfile();
+      await fetchMembers();
+      setShowAvatarModal(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAvatarLoading(false);
+    }
+  }
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -266,13 +455,20 @@ export default function FamillePage() {
         {/* MON COMPTE & DÉCONNEXION */}
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-500 to-amber-500 text-white font-black text-lg flex items-center justify-center shadow-sm">
-                {profile?.full_name ? profile.full_name[0].toUpperCase() : 'U'}
+            <div className="flex items-center gap-3.5">
+              <div
+                onClick={() => setShowAvatarModal(true)}
+                className="relative group cursor-pointer flex-shrink-0"
+                title="Changer ma photo de profil ou mon avatar"
+              >
+                {renderAvatar(profile || undefined, 'w-13 h-13', 'text-xl')}
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-md border-2 border-white group-hover:scale-110 transition">
+                  <Camera className="w-3 h-3" />
+                </div>
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-gray-900 text-sm">
+                  <span className="font-bold text-gray-900 text-sm sm:text-base">
                     {profile?.full_name || 'Utilisateur'}
                   </span>
                   {isAdmin && (
@@ -283,6 +479,14 @@ export default function FamillePage() {
                   )}
                 </div>
                 <p className="text-xs text-gray-500">{user?.email || profile?.email}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarModal(true)}
+                  className="text-[11px] font-semibold text-primary-600 hover:text-primary-700 hover:underline mt-0.5 flex items-center gap-1 transition"
+                >
+                  <Camera className="w-3 h-3" />
+                  <span>Modifier mon avatar</span>
+                </button>
               </div>
             </div>
             <button
@@ -476,9 +680,12 @@ export default function FamillePage() {
                   key={m.id}
                   className="bg-white rounded-2xl p-3 border border-amber-200/80 flex items-center justify-between shadow-xs"
                 >
-                  <div>
-                    <h3 className="font-bold text-xs text-gray-900">{m.full_name}</h3>
-                    <p className="text-[11px] text-gray-500">{m.email}</p>
+                  <div className="flex items-center gap-2.5">
+                    {renderAvatar(m, 'w-8 h-8', 'text-xs')}
+                    <div>
+                      <h3 className="font-bold text-xs text-gray-900">{m.full_name}</h3>
+                      <p className="text-[11px] text-gray-500">{m.email}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -610,9 +817,7 @@ export default function FamillePage() {
                 <div key={m.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-xs hover:border-gray-200 transition">
                   <div className="p-3.5 flex items-center justify-between">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-sm flex-shrink-0">
-                        {m.full_name ? m.full_name[0].toUpperCase() : 'M'}
-                      </div>
+                      {renderAvatar(m, 'w-10 h-10', 'text-base')}
                       <div className="min-w-0">
                         {isEditing ? (
                           <div className="flex items-center gap-1.5 py-0.5">
@@ -778,14 +983,17 @@ export default function FamillePage() {
                   key={m.id}
                   className="bg-white rounded-2xl p-3 border border-red-200 flex items-center justify-between shadow-xs"
                 >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-xs text-gray-900">{m.full_name}</h3>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-800">
-                        Accès révoqué
-                      </span>
+                  <div className="flex items-center gap-2.5">
+                    {renderAvatar(m, 'w-8 h-8', 'text-xs')}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-xs text-gray-900">{m.full_name}</h3>
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-red-100 text-red-800">
+                          Accès révoqué
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-gray-500">{m.email}</p>
                     </div>
-                    <p className="text-[11px] text-gray-500">{m.email}</p>
                   </div>
                   <button
                     onClick={() => handleUpdateStatus(m.id, 'approved')}
@@ -800,6 +1008,136 @@ export default function FamillePage() {
           </div>
         )}
       </div>
+
+      {/* MODAL PERSONNALISATION DE L'AVATAR */}
+      {showAvatarModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between flex-shrink-0 bg-white dark:bg-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 flex items-center justify-center">
+                  <Camera className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-gray-900 dark:text-white">Photo de profil / Avatar</h3>
+                  <p className="text-[10px] text-gray-400">Visible par toute la famille</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAvatarModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              {/* APERÇU ACTUEL */}
+              <div className="flex flex-col items-center justify-center p-4 bg-gray-50 dark:bg-slate-750 rounded-2xl border border-gray-100 dark:border-slate-700">
+                {renderAvatar(profile || undefined, 'w-20 h-20', 'text-3xl')}
+                <p className="font-bold text-xs text-gray-900 dark:text-white mt-2">
+                  {profile?.full_name}
+                </p>
+                <span className="text-[10px] text-gray-400">Aperçu actuel</span>
+              </div>
+
+              {/* MESSAGES */}
+              {avatarSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 font-semibold">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+                  <span>{avatarSuccess}</span>
+                </div>
+              )}
+
+              {avatarError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{avatarError}</span>
+                </div>
+              )}
+
+              {/* SECTION 1 : UPLOAD PHOTO */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5 text-primary-600" />
+                  <span>Votre propre photo</span>
+                </h4>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  disabled={avatarLoading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-3 rounded-xl border border-dashed border-primary-400 hover:border-primary-600 bg-orange-50/50 dark:bg-primary-950/20 text-primary-700 dark:text-primary-300 text-xs font-bold flex items-center justify-center gap-2 transition hover:bg-orange-100/50"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>{avatarLoading ? 'Traitement...' : 'Prendre ou choisir une photo'}</span>
+                </button>
+                <p className="text-[10px] text-gray-400 text-center">
+                  Recadrée automatiquement en carré et optimisée.
+                </p>
+              </div>
+
+              {/* SECTION 2 : CHOIX EMOJI */}
+              <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-slate-700">
+                <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                  <Smile className="w-3.5 h-3.5 text-primary-600" />
+                  <span>Ou choisir un avatar express :</span>
+                </h4>
+                <div className="grid grid-cols-8 gap-1.5 bg-gray-50 dark:bg-slate-750 p-2 rounded-2xl border border-gray-100 dark:border-slate-700">
+                  {PRESET_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      disabled={avatarLoading}
+                      onClick={() => handleSelectEmoji(emoji)}
+                      className={`h-9 rounded-xl flex items-center justify-center text-lg hover:scale-125 transition ${
+                        profile?.avatar_url === emoji
+                          ? 'bg-orange-200 dark:bg-primary-900 ring-2 ring-primary-500 scale-110'
+                          : 'hover:bg-white dark:hover:bg-slate-700'
+                      }`}
+                      title={emoji}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* SECTION 3 : RÉINITIALISER */}
+              {profile?.avatar_url && (
+                <div className="pt-2 border-t border-gray-100 dark:border-slate-700">
+                  <button
+                    type="button"
+                    disabled={avatarLoading}
+                    onClick={handleRemoveAvatar}
+                    className="w-full py-2 text-xs font-semibold text-gray-500 hover:text-red-600 flex items-center justify-center gap-1.5 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Réinitialiser (afficher mes initiales)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-gray-50 dark:bg-slate-750 border-t border-gray-100 dark:border-slate-700 flex justify-end flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowAvatarModal(false)}
+                className="w-full py-2 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

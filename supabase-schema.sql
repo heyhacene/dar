@@ -163,3 +163,89 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- ====================================================================
+-- 6. Table des Recettes Partagées dans le Cloud
+-- ====================================================================
+create table if not exists public.recipes (
+  id text primary key,
+  title text not null,
+  category text default 'plat',
+  default_servings integer default 4,
+  prep_time_minutes integer default 15,
+  cook_time_minutes integer default 20,
+  image_url text,
+  ingredients jsonb default '[]'::jsonb,
+  steps jsonb default '[]'::jsonb,
+  notes text,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  created_by uuid references public.profiles(id) on delete set null
+);
+
+alter table public.recipes enable row level security;
+drop policy if exists "Lecture recettes" on public.recipes;
+create policy "Lecture recettes" on public.recipes for select using (auth.role() = 'authenticated');
+drop policy if exists "Ajout recettes" on public.recipes;
+create policy "Ajout recettes" on public.recipes for insert with check (auth.role() = 'authenticated');
+drop policy if exists "Maj recettes" on public.recipes;
+create policy "Maj recettes" on public.recipes for update using (auth.role() = 'authenticated');
+drop policy if exists "Suppression recettes" on public.recipes;
+create policy "Suppression recettes" on public.recipes for delete using (auth.role() = 'authenticated');
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'recipes') then
+    alter publication supabase_realtime add table public.recipes;
+  end if;
+end $$;
+
+-- ====================================================================
+-- 7. Table de l'État Cuisine Partagé (Planning 2 semaines & Courses)
+-- ====================================================================
+create table if not exists public.family_kitchen (
+  id text primary key default 'main',
+  weekly_plan jsonb default '{}'::jsonb,
+  custom_shopping_items jsonb default '[]'::jsonb,
+  checked_items jsonb default '{}'::jsonb,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.family_kitchen enable row level security;
+drop policy if exists "Gestion kitchen" on public.family_kitchen;
+create policy "Gestion kitchen" on public.family_kitchen for all using (auth.role() = 'authenticated');
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'family_kitchen') then
+    alter publication supabase_realtime add table public.family_kitchen;
+  end if;
+end $$;
+
+-- ====================================================================
+-- 8. Table des Alertes Familiales (Bannière temporaire urgente)
+-- ====================================================================
+create table if not exists public.family_alerts (
+  id uuid default gen_random_uuid() primary key,
+  message text not null,
+  level text default 'warning' check (level in ('info', 'warning', 'urgent')),
+  author_name text,
+  created_by uuid references public.profiles(id) on delete set null,
+  expires_at timestamp with time zone not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  is_active boolean default true
+);
+
+alter table public.family_alerts enable row level security;
+drop policy if exists "Lecture alertes" on public.family_alerts;
+create policy "Lecture alertes" on public.family_alerts for select using (auth.role() = 'authenticated');
+drop policy if exists "Creation alertes" on public.family_alerts;
+create policy "Creation alertes" on public.family_alerts for insert with check (auth.role() = 'authenticated');
+drop policy if exists "Maj alertes" on public.family_alerts;
+create policy "Maj alertes" on public.family_alerts for update using (auth.role() = 'authenticated');
+drop policy if exists "Suppression alertes" on public.family_alerts;
+create policy "Suppression alertes" on public.family_alerts for delete using (auth.role() = 'authenticated');
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'family_alerts') then
+    alter publication supabase_realtime add table public.family_alerts;
+  end if;
+end $$;
+

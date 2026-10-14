@@ -42,6 +42,7 @@ export interface Conversation {
   last_message?: string;
   last_message_at?: string;
   unread_count?: number;
+  participantIds?: string[];
 }
 
 export interface Message {
@@ -65,4 +66,15 @@ export interface FamilyEvent {
   created_by?: string;
   created_at?: string;
   creator_name?: string;
+}
+
+export interface FamilyAlert {
+  id: string;
+  message: string;
+  level: 'info' | 'warning' | 'urgent';
+  author_name?: string;
+  created_by?: string;
+  expires_at: string;
+  created_at?: string;
+  is_active?: boolean;
 }

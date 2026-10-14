@@ -43,6 +43,10 @@ function parsePoll(content: string): PollData | null {
   }
 }
 
+function isPhotoUrl(url?: string): boolean {
+  return Boolean(url && (url.startsWith('data:image') || url.startsWith('http')));
+}
+
 const QUICK_EMOJIS = ['❤️', '👍', '😂', '🎉', '🍕', '☕', '👏', '🚗', '🛒'];
 
 const QUICK_PHRASES = [
@@ -137,16 +141,44 @@ function MessagesContent() {
       }
       setLoading(true);
       try {
-        const { data: participations, error } = await supabase
+        // 1. Récupérer les participations de l'utilisateur
+        const { data: myParticipations, error } = await supabase
           .from('conversation_participants')
-          .select('conversation_id, conversations(*)')
+          .select('conversation_id')
           .eq('user_id', user.id);
 
         if (error) throw error;
 
-        const convList: Conversation[] = (participations || [])
-          .map((p: any) => p.conversations)
-          .filter(Boolean);
+        const convIds = (myParticipations || []).map((p: any) => p.conversation_id);
+        if (convIds.length === 0) {
+          setConversations([]);
+          setLoading(false);
+          return;
+        }
+
+        // 2. Récupérer TOUS les participants de ces conversations
+        const { data: allParts } = await supabase
+          .from('conversation_participants')
+          .select('conversation_id, user_id')
+          .in('conversation_id', convIds);
+
+        const partsMap: Record<string, string[]> = {};
+        (allParts || []).forEach((ap: any) => {
+          if (!partsMap[ap.conversation_id]) partsMap[ap.conversation_id] = [];
+          partsMap[ap.conversation_id].push(ap.user_id);
+        });
+
+        // 3. Récupérer les conversations
+        const { data: convListRaw } = await supabase
+          .from('conversations')
+          .select('*')
+          .in('id', convIds)
+          .order('created_at', { ascending: false });
+
+        const convList: Conversation[] = (convListRaw || []).map((c: any) => ({
+          ...c,
+          participantIds: partsMap[c.id] || [],
+        }));
 
         setConversations(convList);
 
@@ -405,13 +437,31 @@ function MessagesContent() {
     }
   }
 
+  function getOtherParticipant(c: Conversation): Profile | undefined {
+    if (!c.participantIds) return undefined;
+    const otherId = c.participantIds.find((id) => id !== user?.id);
+    return otherId ? profilesMap[otherId] : undefined;
+  }
+
   function getConvTitle(c: Conversation): string {
     if (c.name) return c.name;
+    if (c.participantIds && c.participantIds.length > 0) {
+      const otherIds = c.participantIds.filter((id) => id !== user?.id);
+      const otherNames = otherIds
+        .map((id) => profilesMap[id]?.full_name)
+        .filter(Boolean);
+      if (otherNames.length > 0) {
+        return otherNames.join(', ');
+      }
+    }
     return 'Message privé';
   }
 
   // --- VUE 1 : DANS UNE CONVERSATION (CHAT ROOM) ---
   if (activeConv) {
+    const otherProfile = getOtherParticipant(activeConv);
+    const convTitle = getConvTitle(activeConv);
+
     return (
       <div className="flex flex-col h-[calc(100vh-4rem)] max-w-lg mx-auto bg-gray-50 dark:bg-slate-900">
         {/* EN-TÊTE DE LA CONVERSATION */}
@@ -423,12 +473,28 @@ function MessagesContent() {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="w-9 h-9 rounded-full bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 font-bold flex items-center justify-center text-xs">
-              {activeConv.is_group ? <Users className="w-4 h-4" /> : <User className="w-4 h-4" />}
+            <div className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 shadow-xs">
+              {otherProfile?.avatar_url && !activeConv.name ? (
+                isPhotoUrl(otherProfile.avatar_url) ? (
+                  <img src={otherProfile.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center text-base">
+                    {otherProfile.avatar_url}
+                  </div>
+                )
+              ) : !activeConv.name && otherProfile ? (
+                <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-bold flex items-center justify-center text-xs">
+                  {otherProfile.full_name ? otherProfile.full_name[0].toUpperCase() : 'U'}
+                </div>
+              ) : (
+                <div className="w-full h-full bg-primary-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 font-bold flex items-center justify-center text-xs">
+                  <Users className="w-4 h-4" />
+                </div>
+              )}
             </div>
             <div>
               <h2 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
-                {getConvTitle(activeConv)}
+                {convTitle}
               </h2>
               <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -586,21 +652,40 @@ function MessagesContent() {
               return (
                 <div
                   key={m.id}
-                  className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}
+                  className={`flex ${isMine ? 'justify-end' : 'justify-start items-end gap-2'}`}
                 >
                   {!isMine && (
-                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-0.5 ml-2">
-                      {sender?.full_name || 'Membre'}
-                    </span>
+                    <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 mb-1 shadow-xs flex items-center justify-center">
+                      {sender?.avatar_url ? (
+                        isPhotoUrl(sender.avatar_url) ? (
+                          <img src={sender.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center text-xs">
+                            {sender.avatar_url}
+                          </div>
+                        )
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-bold text-[10px] flex items-center justify-center">
+                          {sender?.full_name ? sender.full_name[0].toUpperCase() : 'M'}
+                        </div>
+                      )}
+                    </div>
                   )}
-                  <div
-                    className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-sm shadow-xs break-words ${
-                      isMine
-                        ? 'bg-primary-600 text-white rounded-br-xs'
-                        : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white border border-gray-100 dark:border-slate-700 rounded-bl-xs'
-                    }`}
-                  >
-                    <p className="leading-relaxed whitespace-pre-wrap">{m.content}</p>
+
+                  <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'}`}>
+                    {!isMine && (
+                      <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 mb-0.5 ml-1">
+                        {sender?.full_name || 'Membre'}
+                      </span>
+                    )}
+                    <div
+                      className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-sm shadow-xs break-words ${
+                        isMine
+                          ? 'bg-primary-600 text-white rounded-br-xs'
+                          : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white border border-gray-100 dark:border-slate-700 rounded-bl-xs'
+                      }`}
+                    >
+                      <p className="leading-relaxed whitespace-pre-wrap">{m.content}</p>
                     <div
                       className={`text-[9px] mt-1 text-right ${
                         isMine ? 'text-orange-100' : 'text-gray-400 dark:text-slate-400'
@@ -867,20 +952,39 @@ function MessagesContent() {
           </div>
         ) : (
           <div className="space-y-2">
-            {conversations.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setActiveConv(c)}
-                className="w-full text-left bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-gray-100 dark:border-slate-700 hover:border-orange-200 dark:hover:border-slate-600 transition shadow-xs flex items-center gap-3"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 flex items-center justify-center flex-shrink-0 font-bold">
-                  {c.is_group ? <Users className="w-6 h-6" /> : <User className="w-6 h-6" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate">
-                      {getConvTitle(c)}
-                    </h3>
+            {conversations.map((c) => {
+              const other = getOtherParticipant(c);
+              const title = getConvTitle(c);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveConv(c)}
+                  className="w-full text-left bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-gray-100 dark:border-slate-700 hover:border-orange-200 dark:hover:border-slate-600 transition shadow-xs flex items-center gap-3"
+                >
+                  <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 shadow-xs">
+                    {other?.avatar_url && !c.name ? (
+                      isPhotoUrl(other.avatar_url) ? (
+                        <img src={other.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center text-2xl">
+                          {other.avatar_url}
+                        </div>
+                      )
+                    ) : !c.name && other ? (
+                      <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-bold text-base flex items-center justify-center">
+                        {other.full_name ? other.full_name[0].toUpperCase() : 'U'}
+                      </div>
+                    ) : (
+                      <div className="w-full h-full bg-orange-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 flex items-center justify-center font-bold">
+                        <Users className="w-6 h-6" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate">
+                        {title}
+                      </h3>
                     <span className="text-[10px] text-gray-400 dark:text-slate-500 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {new Date(c.created_at).toLocaleDateString('fr-FR', {

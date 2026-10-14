@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import { Recipe } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { loadLocalData, loadCloudData, saveCloudRecipe } from '@/lib/storage';
+import { useAuth } from '@/lib/authContext';
 import Link from 'next/link';
 import { Plus, Search, Clock, Users, ChefHat, Wand2, X, AlertCircle, Share2, Sparkles } from 'lucide-react';
 import CuisineTabs from '@/components/CuisineTabs';
 
 export default function RecettesPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<string>('all');
@@ -22,8 +24,14 @@ export default function RecettesPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 1. Chargement instantané depuis le cache local
     const data = loadLocalData();
     setRecipes(data.recipes);
+
+    // 2. Synchronisation en arrière-plan avec Supabase
+    loadCloudData().then((cloudData) => {
+      setRecipes(cloudData.recipes);
+    });
   }, []);
 
   const filtered = recipes.filter((r) => {
@@ -69,15 +77,9 @@ export default function RecettesPage() {
         updatedAt: new Date().toISOString(),
       };
 
-      const currentData = loadLocalData();
-      const updated = {
-        ...currentData,
-        recipes: [newRecipe, ...currentData.recipes],
-      };
-
-      saveLocalData(updated);
-      syncWithGoogle(updated);
-      setRecipes(updated.recipes);
+      // Sauvegarde Cloud Supabase & LocalStorage
+      await saveCloudRecipe(newRecipe, user?.id);
+      setRecipes((prev) => [newRecipe, ...prev.filter((r) => r.id !== newRecipe.id)]);
       setIsModalOpen(false);
       setImportInput('');
 

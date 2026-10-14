@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import { AppData, ShoppingItem } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { loadLocalData, loadCloudData, syncKitchenCloud } from '@/lib/storage';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   Check,
   Plus,
@@ -74,8 +75,32 @@ export default function CoursesPage() {
   const [copiedText, setCopiedText] = useState(false);
 
   useEffect(() => {
+    // 1. Chargement instantané depuis le cache local
     const loaded = loadLocalData();
     setData(loaded);
+
+    // 2. Synchronisation depuis le cloud Supabase
+    loadCloudData().then((cloudData) => {
+      setData(cloudData);
+    });
+
+    // 3. Écoute temps réel pour les courses (ex: un membre coche un article au supermarché)
+    if (isSupabaseConfigured()) {
+      const channel = supabase
+        .channel('courses_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'family_kitchen' },
+          () => {
+            loadCloudData().then((fresh) => setData(fresh));
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, []);
 
   // Consolidation des ingrédients depuis le planning de la semaine
@@ -186,8 +211,7 @@ export default function CoursesPage() {
 
   function persist(updated: AppData) {
     setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    syncKitchenCloud(updated.weeklyPlan, updated.customShoppingItems, updated.checkedItems);
   }
 
   function toggleItem(id: string, isCustom?: boolean) {

@@ -23,6 +23,7 @@ export const viewport: Viewport = {
 };
 
 import { AuthProvider } from '@/lib/authContext';
+import FamilyAlertBanner from '@/components/FamilyAlertBanner';
 
 export default function RootLayout({
   children,
@@ -38,6 +39,7 @@ export default function RootLayout({
       </head>
       <body className="h-full flex flex-col max-w-lg mx-auto bg-white shadow-xl min-h-screen relative pb-36">
         <AuthProvider>
+          <FamilyAlertBanner />
           <main className="flex-1">{children}</main>
           <BottomNav />
         </AuthProvider>

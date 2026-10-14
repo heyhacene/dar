@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Recipe, ShoppingItem, Ingredient } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { loadLocalData, loadCloudData, deleteCloudRecipe, syncKitchenCloud } from '@/lib/storage';
 import { ArrowLeft, Users, Clock, Flame, Trash2, ShoppingCart, Plus, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -15,13 +15,25 @@ export default function RecipeDetailPage() {
   const [addedNotice, setAddedNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const data = loadLocalData();
     const recipeId = Array.isArray(params?.id) ? params.id[0] : params?.id;
+    if (!recipeId) return;
+
+    // 1. Chercher dans le cache local
+    const data = loadLocalData();
     const found = data.recipes.find((r) => r.id === recipeId);
     if (found) {
       setRecipe(found);
       setServings(found.defaultServings);
     }
+
+    // 2. Synchroniser avec Supabase au cas où la recette a été créée depuis un autre appareil
+    loadCloudData().then((cloudData) => {
+      const cloudFound = cloudData.recipes.find((r) => r.id === recipeId);
+      if (cloudFound) {
+        setRecipe(cloudFound);
+        setServings(cloudFound.defaultServings);
+      }
+    });
   }, [params]);
 
   if (!recipe) {
@@ -31,19 +43,14 @@ export default function RecipeDetailPage() {
   // Calculateur de proportion dynamique selon le nombre de convives
   const scale = servings / recipe.defaultServings;
 
-  function handleDelete() {
-    if (!confirm('Supprimer cette recette du carnet ?')) return;
-    const data = loadLocalData();
-    const updated = {
-      ...data,
-      recipes: data.recipes.filter((r) => r.id !== recipe?.id),
-    };
-    saveLocalData(updated);
+  async function handleDelete() {
+    if (!confirm('Supprimer cette recette du carnet pour toute la famille ?')) return;
+    await deleteCloudRecipe(recipe!.id);
     router.push('/recettes');
   }
 
   // AJOUT EN 1 CLIC DE TOUS LES INGRÉDIENTS À LA LISTE DE COURSES
-  function handleAddAllToShoppingList() {
+  async function handleAddAllToShoppingList() {
     if (!recipe) return;
     const data = loadLocalData();
 
@@ -57,20 +64,15 @@ export default function RecipeDetailPage() {
       isCustom: true,
     }));
 
-    const updated = {
-      ...data,
-      customShoppingItems: [...newItems, ...data.customShoppingItems],
-    };
-
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    const updatedCustom = [...newItems, ...data.customShoppingItems];
+    await syncKitchenCloud(data.weeklyPlan, updatedCustom, data.checkedItems);
 
     setAddedNotice(`${newItems.length} ingrédients ajoutés à votre liste de courses !`);
     setTimeout(() => setAddedNotice(null), 4000);
   }
 
   // AJOUT D'UN SEUL INGRÉDIENT AU CHOIX
-  function handleAddSingleIngredient(ing: Ingredient) {
+  async function handleAddSingleIngredient(ing: Ingredient) {
     if (!recipe) return;
     const data = loadLocalData();
     const adjustedQuantity = Math.round(ing.quantity * scale * 10) / 10;
@@ -85,13 +87,8 @@ export default function RecipeDetailPage() {
       isCustom: true,
     };
 
-    const updated = {
-      ...data,
-      customShoppingItems: [newItem, ...data.customShoppingItems],
-    };
-
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    const updatedCustom = [newItem, ...data.customShoppingItems];
+    await syncKitchenCloud(data.weeklyPlan, updatedCustom, data.checkedItems);
 
     setAddedNotice(`« ${ing.name} » ajouté aux courses !`);
     setTimeout(() => setAddedNotice(null), 3000);

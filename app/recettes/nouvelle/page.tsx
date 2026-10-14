@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import { Recipe, Ingredient } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { saveCloudRecipe } from '@/lib/storage';
+import { useAuth } from '@/lib/authContext';
 import { Plus, Trash2, ArrowLeft, Wand2, Link2, FileText, X, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NouvelleRecettePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<'plat' | 'entree' | 'dessert' | 'rapide'>('plat');
   const [servings, setServings] = useState(4);
@@ -88,7 +90,7 @@ export default function NouvelleRecettePage() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
 
@@ -109,14 +111,7 @@ export default function NouvelleRecettePage() {
       updatedAt: new Date().toISOString(),
     };
 
-    const currentData = loadLocalData();
-    const updated = {
-      ...currentData,
-      recipes: [newRecipe, ...currentData.recipes],
-    };
-
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    await saveCloudRecipe(newRecipe, user?.id);
     router.push('/recettes');
   }
 

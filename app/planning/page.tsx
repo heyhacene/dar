@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import AddMealModal from '@/components/AddMealModal';
 import { AppData, DayOfWeek, MealType, PlannedMeal, WeekSelection } from '@/types';
-import { loadLocalData, saveLocalData, syncWithGoogle } from '@/lib/storage';
+import { loadLocalData, loadCloudData, syncKitchenCloud } from '@/lib/storage';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { Plus, Users, Trash2, CalendarDays } from 'lucide-react';
 import Link from 'next/link';
 import CuisineTabs from '@/components/CuisineTabs';
@@ -25,8 +26,32 @@ export default function PlanningPage() {
   const [modalSlot, setModalSlot] = useState<{ day: DayOfWeek; type: MealType } | null>(null);
 
   useEffect(() => {
+    // 1. Rendu immédiat depuis le cache local
     const local = loadLocalData();
     setData(local);
+
+    // 2. Chargement depuis le cloud Supabase
+    loadCloudData().then((cloudData) => {
+      setData(cloudData);
+    });
+
+    // 3. Écoute temps réel pour synchroniser le planning familial en direct
+    if (isSupabaseConfigured()) {
+      const channel = supabase
+        .channel('planning_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'family_kitchen' },
+          () => {
+            loadCloudData().then((fresh) => setData(fresh));
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, []);
 
   if (!data) return <div className="p-8 text-center text-gray-500">Chargement du planning...</div>;
@@ -66,8 +91,7 @@ export default function PlanningPage() {
       },
     };
     setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    syncKitchenCloud(updated.weeklyPlan, updated.customShoppingItems, updated.checkedItems);
     setModalSlot(null);
   };
 
@@ -81,8 +105,7 @@ export default function PlanningPage() {
 
     const updated: AppData = { ...data, weeklyPlan: copy };
     setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    syncKitchenCloud(updated.weeklyPlan, updated.customShoppingItems, updated.checkedItems);
   };
 
   const handleDeleteMeal = () => {
@@ -103,8 +126,7 @@ export default function PlanningPage() {
 
     const updated: AppData = { ...data, weeklyPlan: copy };
     setData(updated);
-    saveLocalData(updated);
-    syncWithGoogle(updated);
+    syncKitchenCloud(updated.weeklyPlan, updated.customShoppingItems, updated.checkedItems);
   };
 
   // Calcul du nombre de repas sur la semaine active
