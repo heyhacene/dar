@@ -14,6 +14,7 @@ import {
   Check,
   Repeat,
   Calendar,
+  Plus,
 } from 'lucide-react';
 
 const DURATION_OPTIONS = [
@@ -81,8 +82,11 @@ export function isAlertActiveNow(a: FamilyAlert): boolean {
 export default function FamilyAlertBanner() {
   const { user, profile, isAdmin } = useAuth();
   const [alerts, setAlerts] = useState<FamilyAlert[]>([]);
+  const [allAlerts, setAllAlerts] = useState<FamilyAlert[]>([]);
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'create' | 'manage'>('create');
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   // Formulaire d'alerte
   const [alertTypeMode, setAlertTypeMode] = useState<'temporary' | 'recurring'>('temporary');
@@ -97,8 +101,8 @@ export default function FamilyAlertBanner() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  // Charger les alertes actives
-  async function fetchActiveAlerts() {
+  // Charger toutes les alertes (actives et récurrentes programmées)
+  async function fetchAllAlerts() {
     if (!isSupabaseConfigured()) return;
     try {
       const { data, error } = await supabase
@@ -108,8 +112,10 @@ export default function FamilyAlertBanner() {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
+        const list = data as FamilyAlert[];
+        setAllAlerts(list);
         // Filtrer les alertes qui sont actives à l'instant présent
-        const activeNow = (data as FamilyAlert[]).filter(isAlertActiveNow);
+        const activeNow = list.filter(isAlertActiveNow);
         setAlerts(activeNow);
       }
     } catch (err) {
@@ -118,7 +124,7 @@ export default function FamilyAlertBanner() {
   }
 
   useEffect(() => {
-    fetchActiveAlerts();
+    fetchAllAlerts();
 
     if (isSupabaseConfigured()) {
       const channel = supabase
@@ -127,13 +133,13 @@ export default function FamilyAlertBanner() {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'family_alerts' },
           () => {
-            fetchActiveAlerts();
+            fetchAllAlerts();
           }
         )
         .subscribe();
 
       // Vérifier toutes les 30 secondes pour mettre à jour les plages horaires et expirations
-      const interval = setInterval(fetchActiveAlerts, 30000);
+      const interval = setInterval(fetchAllAlerts, 30000);
 
       return () => {
         supabase.removeChannel(channel);
@@ -182,8 +188,14 @@ export default function FamilyAlertBanner() {
       if (error) throw error;
 
       setMessage('');
-      setShowCreateModal(false);
-      fetchActiveAlerts();
+      await fetchAllAlerts();
+      setActiveTab('manage');
+      setActionFeedback(
+        isRecurring
+          ? 'Alerte récurrente enregistrée ! Elle sera automatiquement diffusée selon le créneau choisi.'
+          : 'Alerte ponctuelle diffusée avec succès !'
+      );
+      setTimeout(() => setActionFeedback(null), 5000);
     } catch (err: any) {
       console.error('Erreur création alerte:', err);
       alert('Impossible de publier l’alerte : ' + (err?.message || 'Erreur inconnue'));
@@ -192,18 +204,28 @@ export default function FamilyAlertBanner() {
     }
   }
 
-  // Désactiver l'alerte pour toute la famille
-  async function handleDismissForFamily(alertId: string) {
-    if (!confirm('Supprimer cette alerte pour toute la famille ?')) return;
+  // Supprimer une alerte (accessible depuis le bandeau et depuis la liste de gestion)
+  async function handleDeleteAlert(alertId: string) {
+    if (!confirm('Supprimer définitivement cette alerte pour toute la famille ?')) return;
     try {
+      // Optimiste
+      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+      setAllAlerts((prev) => prev.filter((a) => a.id !== alertId));
+
+      // 1. Désactiver
       await supabase
         .from('family_alerts')
         .update({ is_active: false })
         .eq('id', alertId);
 
-      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+      // 2. Supprimer la ligne
+      await supabase
+        .from('family_alerts')
+        .delete()
+        .eq('id', alertId);
     } catch (err) {
-      console.error(err);
+      console.error('Erreur suppression alerte:', err);
+      fetchAllAlerts();
     }
   }
 
@@ -220,12 +242,12 @@ export default function FamilyAlertBanner() {
       if (days.length === 7) {
         dayStr = 'Tous les jours';
       } else if (days.length === 5 && !days.includes(0) && !days.includes(6)) {
-        dayStr = 'En semaine';
+        dayStr = 'Du lundi au vendredi';
       } else if (days.length === 2 && days.includes(0) && days.includes(6)) {
-        dayStr = 'Le week-end';
+        dayStr = 'Le week-end (sam & dim)';
       } else if (days.length > 0) {
         const mapDays: Record<number, string> = {
-          1: 'mardis',
+          1: 'lundis',
           2: 'mardis',
           3: 'mercredis',
           4: 'jeudis',
@@ -233,7 +255,12 @@ export default function FamilyAlertBanner() {
           6: 'samedis',
           0: 'dimanches',
         };
-        dayStr = 'Tous les ' + days.map((d) => mapDays[d] || 'jours').join(', ');
+        const sorted = [...days].sort((a, b) => {
+          const ordA = a === 0 ? 7 : a;
+          const ordB = b === 0 ? 7 : b;
+          return ordA - ordB;
+        });
+        dayStr = 'Tous les ' + sorted.map((d) => mapDays[d] || 'jours').join(', ');
       } else {
         dayStr = 'Récurrent';
       }
@@ -327,8 +354,8 @@ export default function FamilyAlertBanner() {
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {canManage && (
                     <button
-                      onClick={() => handleDismissForFamily(alt.id)}
-                      title="Supprimer pour toute la famille"
+                      onClick={() => handleDeleteAlert(alt.id)}
+                      title="Supprimer cette alerte"
                       className="p-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-white/90 transition"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -348,31 +375,37 @@ export default function FamilyAlertBanner() {
         </div>
       )}
 
-      {/* BOUTON FLOTTANT DISCRET POUR CRÉER UNE ALERTE */}
+      {/* BOUTON FLOTTANT DISCRET POUR CRÉER / GÉRER LES ALERTES */}
       {user && (
         <div className="fixed right-3 bottom-20 z-30">
           <button
             onClick={() => setShowCreateModal(true)}
-            title="Publier une alerte familiale"
-            className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition flex items-center justify-center border-2 border-white dark:border-slate-800"
+            title="Alertes familiales & Récurrences"
+            className="relative w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 to-orange-600 text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition flex items-center justify-center border-2 border-white dark:border-slate-800"
           >
             <Megaphone className="w-4 h-4" />
+            {allAlerts.length > 0 && (
+              <span className="absolute -top-1 -right-1 px-1.5 min-w-[18px] h-[18px] bg-red-600 text-white text-[10px] font-black rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center shadow-xs">
+                {allAlerts.length}
+              </span>
+            )}
           </button>
         </div>
       )}
 
-      {/* MODAL CRÉATION D'ALERTE */}
+      {/* MODAL GESTION & CRÉATION D'ALERTES */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[100] flex items-center justify-center p-3 sm:p-4">
           <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            {/* EN-TÊTE MODAL */}
             <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex items-center justify-between flex-shrink-0 bg-white dark:bg-slate-800">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-orange-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 flex items-center justify-center">
                   <Megaphone className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-gray-900 dark:text-white">Alerte Familiale</h3>
-                  <p className="text-[10px] text-gray-400">S'affiche en haut de tous les écrans</p>
+                  <h3 className="font-bold text-sm text-gray-900 dark:text-white">Alertes & Rappels Familiaux</h3>
+                  <p className="text-[10px] text-gray-400">Diffusion sur tous les écrans & récurrences</p>
                 </div>
               </div>
               <button
@@ -384,215 +417,360 @@ export default function FamilyAlertBanner() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateAlert} className="flex-1 flex flex-col min-h-0 overflow-hidden">
-              <div className="p-4 space-y-4 overflow-y-auto flex-1">
-                {/* SÉLECTEUR TYPE : PONCTUELLE VS RÉCURRENTE */}
-                <div className="grid grid-cols-2 p-1 bg-gray-100 dark:bg-slate-700/70 rounded-2xl text-xs font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setAlertTypeMode('temporary')}
-                    className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
-                      alertTypeMode === 'temporary'
-                        ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-xs'
-                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Ponctuelle</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAlertTypeMode('recurring')}
-                    className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
-                      alertTypeMode === 'recurring'
-                        ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-xs'
-                        : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Repeat className="w-3.5 h-3.5" />
-                    <span>Récurrente</span>
-                  </button>
-                </div>
+            {/* ONGLETS : CRÉER VS GÉRER */}
+            <div className="grid grid-cols-2 p-1.5 bg-gray-100 dark:bg-slate-700/60 border-b border-gray-100 dark:border-slate-700 text-xs font-bold flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('create')}
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  activeTab === 'create'
+                    ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-xs'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nouvelle alerte</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('manage')}
+                className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  activeTab === 'manage'
+                    ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-xs'
+                    : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                <Repeat className="w-3.5 h-3.5" />
+                <span>Alertes ({allAlerts.length})</span>
+              </button>
+            </div>
 
-                {/* MESSAGE */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Message de l'alerte
-                  </label>
-                  <textarea
-                    rows={2}
-                    required
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    placeholder={
-                      alertTypeMode === 'recurring'
-                        ? 'Ex: Sortir la poubelle jaune !'
-                        : "Ex: Couper l'eau à 14h, Grand-mère arrive..."
-                    }
-                    className="w-full p-2.5 text-xs bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none dark:text-white"
-                  />
-                </div>
+            {/* MESSAGE DE CONFIRMATION */}
+            {actionFeedback && (
+              <div className="mx-4 mt-3 p-2.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2 animate-in fade-in">
+                <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="flex-1 leading-tight">{actionFeedback}</span>
+              </div>
+            )}
 
-                {/* NIVEAU D'URGENCE */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
-                    Niveau d'importance
-                  </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setLevel('info')}
-                      className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
-                        level === 'info'
-                          ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500'
-                          : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <Info className="w-4 h-4 text-sky-500" />
-                      <span>Info</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setLevel('warning')}
-                      className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
-                        level === 'warning'
-                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500'
-                          : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <AlertTriangle className="w-4 h-4 text-amber-500" />
-                      <span>Attention</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setLevel('urgent')}
-                      className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
-                        level === 'urgent'
-                          ? 'border-red-500 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 ring-1 ring-red-500'
-                          : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      <Flame className="w-4 h-4 text-red-500" />
-                      <span>Urgent</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* SI RÉCURRENTE : SÉLECTION DES JOURS ET HEURES */}
-                {alertTypeMode === 'recurring' ? (
-                  <div className="space-y-3 p-3 bg-orange-50/60 dark:bg-primary-950/30 rounded-2xl border border-orange-100 dark:border-primary-900">
-                    <div>
-                      <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-primary-600" />
-                        <span>Jours de récurrence</span>
-                      </label>
-                      <div className="grid grid-cols-7 gap-1">
-                        {DAYS_OF_WEEK.map(({ day, label }) => {
-                          const isSelected = recurrenceDays.includes(day);
-                          return (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => toggleDay(day)}
-                              className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center ${
-                                isSelected
-                                  ? 'bg-primary-600 text-white shadow-xs'
-                                  : 'bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-600'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
+            {/* ONGLET 1 : LISTE ET SUPPRESSION DES ALERTES */}
+            {activeTab === 'manage' && (
+              <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                {allAlerts.length === 0 ? (
+                  <div className="py-8 text-center space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-orange-50 dark:bg-slate-700/50 text-orange-400 mx-auto flex items-center justify-center">
+                      <Megaphone className="w-6 h-6" />
                     </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-                          Heure de début :
-                        </label>
-                        <input
-                          type="time"
-                          value={timeStart}
-                          onChange={(e) => setTimeStart(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl text-xs font-bold text-gray-800 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
-                          Heure de fin :
-                        </label>
-                        <input
-                          type="time"
-                          value={timeEnd}
-                          onChange={(e) => setTimeEnd(e.target.value)}
-                          className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl text-xs font-bold text-gray-800 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-gray-500 dark:text-slate-400">
-                      L'alerte apparaîtra automatiquement chaque semaine pendant cette plage horaire.
+                    <p className="font-bold text-xs text-gray-700 dark:text-gray-300">
+                      Aucune alerte configurée
                     </p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 max-w-xs mx-auto">
+                      Créez un message urgent ponctuel ou une récurrence hebdomadaire (poubelles, rappels...).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('create')}
+                      className="mt-2 py-2 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl text-xs shadow-xs"
+                    >
+                      Diffuser une alerte
+                    </button>
                   </div>
                 ) : (
-                  /* SI PONCTUELLE : SÉLECTION DE LA DURÉE */
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-primary-600" />
-                      <span>Durée de visibilité</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {DURATION_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.label}
-                          type="button"
-                          onClick={() => setSelectedDuration(opt.minutes)}
-                          className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex items-center justify-between ${
-                            selectedDuration === opt.minutes
-                              ? 'border-primary-500 bg-orange-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300'
-                              : 'border-gray-100 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'
-                          }`}
+                  <div className="space-y-2.5">
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      Toutes les alertes actives et programmées pour la famille :
+                    </p>
+                    {allAlerts.map((alt) => {
+                      const isUrgent = alt.level === 'urgent';
+                      const isWarning = alt.level === 'warning';
+                      const isActiveNow = isAlertActiveNow(alt);
+                      const canManage = isAdmin || alt.created_by === user?.id;
+
+                      return (
+                        <div
+                          key={alt.id}
+                          className="p-3 rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 shadow-xs space-y-2"
                         >
-                          <span>{opt.label}</span>
-                          {selectedDuration === opt.minutes && (
-                            <Check className="w-3.5 h-3.5 text-primary-600" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                                  isUrgent
+                                    ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+                                    : isWarning
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                    : 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+                                }`}
+                              >
+                                {isUrgent ? 'URGENT' : isWarning ? 'ATTENTION' : 'INFO'}
+                              </span>
+
+                              {alt.is_recurring ? (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300 flex items-center gap-1">
+                                  <Repeat className="w-3 h-3" />
+                                  <span>Récurrente</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-gray-300 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Ponctuelle</span>
+                                </span>
+                              )}
+
+                              {isActiveNow ? (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  Diffusée maintenant
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                                  Programmée
+                                </span>
+                              )}
+                            </div>
+
+                            {canManage && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteAlert(alt.id)}
+                                title="Supprimer définitivement cette alerte"
+                                className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <p className="font-bold text-xs text-gray-900 dark:text-white leading-snug break-words">
+                            {alt.message}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 pt-1 border-t border-gray-100 dark:border-slate-700">
+                            <span className="font-semibold text-primary-600 dark:text-primary-400 flex items-center gap-1">
+                              {formatAlertSchedule(alt)}
+                            </span>
+                            <span>Par {alt.author_name || 'Famille'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
+            )}
 
-              {/* FOOTER ÉPINGLÉ */}
-              <div className="p-3.5 bg-gray-50 dark:bg-slate-750 border-t border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    submitting ||
-                    !message.trim() ||
-                    (alertTypeMode === 'recurring' && recurrenceDays.length === 0)
-                  }
-                  className="flex-1 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-md transition disabled:opacity-40"
-                >
-                  {submitting
-                    ? 'Diffusion...'
-                    : alertTypeMode === 'recurring'
-                    ? 'Activer la récurrence'
-                    : 'Diffuser l’alerte'}
-                </button>
-              </div>
-            </form>
+            {/* ONGLET 2 : CRÉATION D'UNE ALERTE */}
+            {activeTab === 'create' && (
+              <form onSubmit={handleCreateAlert} className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                  {/* SÉLECTEUR TYPE : PONCTUELLE VS RÉCURRENTE */}
+                  <div className="grid grid-cols-2 p-1 bg-gray-100 dark:bg-slate-700/70 rounded-2xl text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setAlertTypeMode('temporary')}
+                      className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                        alertTypeMode === 'temporary'
+                          ? 'bg-white dark:bg-slate-800 text-gray-900 dark:text-white shadow-xs'
+                          : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Ponctuelle</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAlertTypeMode('recurring')}
+                      className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                        alertTypeMode === 'recurring'
+                          ? 'bg-white dark:bg-slate-800 text-primary-600 dark:text-primary-400 shadow-xs'
+                          : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      <span>Récurrente</span>
+                    </button>
+                  </div>
+
+                  {/* MESSAGE */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      Message de l'alerte
+                    </label>
+                    <textarea
+                      rows={2}
+                      required
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder={
+                        alertTypeMode === 'recurring'
+                          ? 'Ex: Sortir la poubelle jaune !'
+                          : "Ex: Couper l'eau à 14h, Grand-mère arrive..."
+                      }
+                      className="w-full p-2.5 text-xs bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none dark:text-white"
+                    />
+                  </div>
+
+                  {/* NIVEAU D'URGENCE */}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                      Niveau d'importance
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setLevel('info')}
+                        className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
+                          level === 'info'
+                            ? 'border-sky-500 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 ring-1 ring-sky-500'
+                            : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Info className="w-4 h-4 text-sky-500" />
+                        <span>Info</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setLevel('warning')}
+                        className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
+                          level === 'warning'
+                            ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500'
+                            : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        <span>Attention</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setLevel('urgent')}
+                        className={`p-2 rounded-xl text-center border text-[11px] font-bold transition flex flex-col items-center gap-1 ${
+                          level === 'urgent'
+                            ? 'border-red-500 bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 ring-1 ring-red-500'
+                            : 'border-gray-100 dark:border-slate-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        <Flame className="w-4 h-4 text-red-500" />
+                        <span>Urgent</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* SI RÉCURRENTE : SÉLECTION DES JOURS ET HEURES */}
+                  {alertTypeMode === 'recurring' ? (
+                    <div className="space-y-3 p-3 bg-orange-50/60 dark:bg-primary-950/30 rounded-2xl border border-orange-100 dark:border-primary-900">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
+                          <Calendar className="w-3.5 h-3.5 text-primary-600" />
+                          <span>Jours de récurrence</span>
+                        </label>
+                        <div className="grid grid-cols-7 gap-1">
+                          {DAYS_OF_WEEK.map(({ day, label }) => {
+                            const isSelected = recurrenceDays.includes(day);
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => toggleDay(day)}
+                                className={`py-2 rounded-xl text-xs font-bold transition flex items-center justify-center ${
+                                  isSelected
+                                    ? 'bg-primary-600 text-white shadow-xs'
+                                    : 'bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-600'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                            Heure de début :
+                          </label>
+                          <input
+                            type="time"
+                            value={timeStart}
+                            onChange={(e) => setTimeStart(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl text-xs font-bold text-gray-800 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-gray-600 dark:text-gray-400 mb-1">
+                            Heure de fin :
+                          </label>
+                          <input
+                            type="time"
+                            value={timeEnd}
+                            onChange={(e) => setTimeEnd(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-xl text-xs font-bold text-gray-800 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-gray-500 dark:text-slate-400">
+                        L'alerte apparaîtra automatiquement chaque semaine pendant cette plage horaire.
+                      </p>
+                    </div>
+                  ) : (
+                    /* SI PONCTUELLE : SÉLECTION DE LA DURÉE */
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-primary-600" />
+                        <span>Durée de visibilité</span>
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {DURATION_OPTIONS.map((opt) => (
+                          <button
+                            key={opt.label}
+                            type="button"
+                            onClick={() => setSelectedDuration(opt.minutes)}
+                            className={`p-2 rounded-xl text-left border text-[11px] font-bold transition flex items-center justify-between ${
+                              selectedDuration === opt.minutes
+                                ? 'border-primary-500 bg-orange-50 dark:bg-primary-950/50 text-primary-700 dark:text-primary-300'
+                                : 'border-gray-100 dark:border-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-700'
+                            }`}
+                          >
+                            <span>{opt.label}</span>
+                            {selectedDuration === opt.minutes && (
+                              <Check className="w-3.5 h-3.5 text-primary-600" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* FOOTER ÉPINGLÉ */}
+                <div className="p-3.5 bg-gray-50 dark:bg-slate-750 border-t border-gray-100 dark:border-slate-700 flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition"
+                  >
+                    Fermer
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      submitting ||
+                      !message.trim() ||
+                      (alertTypeMode === 'recurring' && recurrenceDays.length === 0)
+                    }
+                    className="flex-1 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs shadow-md transition disabled:opacity-40"
+                  >
+                    {submitting
+                      ? 'Diffusion...'
+                      : alertTypeMode === 'recurring'
+                      ? 'Activer la récurrence'
+                      : 'Diffuser l’alerte'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

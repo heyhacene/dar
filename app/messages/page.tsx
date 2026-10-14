@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import Header from '@/components/Header';
 import { useAuth } from '@/lib/authContext';
 import { supabase, isSupabaseConfigured, Message, Conversation, Profile } from '@/lib/supabase';
@@ -18,6 +18,7 @@ import {
   Bell,
   Trash2,
   Sparkles,
+  AlertTriangle,
 } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { sendLocalNotification, isNotificationSupported, getNotificationPermission, requestNotificationPermission } from '@/lib/notifications';
@@ -45,6 +46,12 @@ function parsePoll(content: string): PollData | null {
 
 function isPhotoUrl(url?: string): boolean {
   return Boolean(url && (url.startsWith('data:image') || url.startsWith('http')));
+}
+
+function isCentralFamilyConv(c?: Conversation | null): boolean {
+  if (!c || !c.name) return false;
+  const n = c.name.trim().toLowerCase();
+  return n === 'toute la famille' || n === 'famille';
 }
 
 const QUICK_EMOJIS = ['❤️', '👍', '😂', '🎉', '🍕', '☕', '👏', '🚗', '🛒'];
@@ -93,6 +100,14 @@ function MessagesContent() {
   const [pollMultiple, setPollMultiple] = useState(false);
   const [isSubmittingPoll, setIsSubmittingPoll] = useState(false);
 
+  // Suppression de conversation (appui long)
+  const [convToDelete, setConvToDelete] = useState<Conversation | null>(null);
+  const [isDeletingConv, setIsDeletingConv] = useState(false);
+  const [infoToast, setInfoToast] = useState<string | null>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isLongPressActiveRef = useRef(false);
+
   // Quick bar
   const [showQuickBar, setShowQuickBar] = useState(false);
 
@@ -133,68 +148,173 @@ function MessagesContent() {
   }, []);
 
   // Charger les conversations
-  useEffect(() => {
-    async function loadConversations() {
-      if (!isSupabaseConfigured() || !user) {
+  const loadConversations = useCallback(async () => {
+    if (!isSupabaseConfigured() || !user) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      // 1. Récupérer les participations de l'utilisateur
+      const { data: myParticipations, error } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      const convIds = (myParticipations || []).map((p: any) => p.conversation_id);
+      if (convIds.length === 0) {
+        setConversations([]);
         setLoading(false);
         return;
       }
-      setLoading(true);
-      try {
-        // 1. Récupérer les participations de l'utilisateur
-        const { data: myParticipations, error } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', user.id);
 
-        if (error) throw error;
+      // 2. Récupérer TOUS les participants de ces conversations
+      const { data: allParts } = await supabase
+        .from('conversation_participants')
+        .select('conversation_id, user_id')
+        .in('conversation_id', convIds);
 
-        const convIds = (myParticipations || []).map((p: any) => p.conversation_id);
-        if (convIds.length === 0) {
-          setConversations([]);
-          setLoading(false);
-          return;
-        }
+      const partsMap: Record<string, string[]> = {};
+      (allParts || []).forEach((ap: any) => {
+        if (!partsMap[ap.conversation_id]) partsMap[ap.conversation_id] = [];
+        partsMap[ap.conversation_id].push(ap.user_id);
+      });
 
-        // 2. Récupérer TOUS les participants de ces conversations
-        const { data: allParts } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id, user_id')
-          .in('conversation_id', convIds);
+      // 3. Récupérer les conversations
+      const { data: convListRaw } = await supabase
+        .from('conversations')
+        .select('*')
+        .in('id', convIds)
+        .order('created_at', { ascending: false });
 
-        const partsMap: Record<string, string[]> = {};
-        (allParts || []).forEach((ap: any) => {
-          if (!partsMap[ap.conversation_id]) partsMap[ap.conversation_id] = [];
-          partsMap[ap.conversation_id].push(ap.user_id);
-        });
+      const convList: Conversation[] = (convListRaw || []).map((c: any) => ({
+        ...c,
+        participantIds: partsMap[c.id] || [],
+      }));
 
-        // 3. Récupérer les conversations
-        const { data: convListRaw } = await supabase
-          .from('conversations')
-          .select('*')
-          .in('id', convIds)
-          .order('created_at', { ascending: false });
+      setConversations(convList);
 
-        const convList: Conversation[] = (convListRaw || []).map((c: any) => ({
-          ...c,
-          participantIds: partsMap[c.id] || [],
-        }));
-
-        setConversations(convList);
-
-        if (initialConvId) {
-          const found = convList.find((c) => c.id === initialConvId);
-          if (found) setActiveConv(found);
-        }
-      } catch (err) {
-        console.error('Erreur conversations:', err);
-      } finally {
-        setLoading(false);
+      if (initialConvId) {
+        const found = convList.find((c) => c.id === initialConvId);
+        if (found) setActiveConv(found);
       }
+    } catch (err) {
+      console.error('Erreur conversations:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, initialConvId]);
+
+  useEffect(() => {
+    loadConversations();
+
+    // ÉCOUTE EN TEMPS RÉEL : Ajout / Suppression de conversations
+    if (isSupabaseConfigured()) {
+      const channel = supabase
+        .channel('conversations_list_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'conversations' },
+          () => {
+            loadConversations();
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'conversation_participants' },
+          () => {
+            loadConversations();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [loadConversations]);
+
+  // Détection de l'appui long
+  function startLongPress(c: Conversation, clientX: number, clientY: number) {
+    isLongPressActiveRef.current = false;
+    touchStartPosRef.current = { x: clientX, y: clientY };
+
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
     }
 
-    loadConversations();
-  }, [user, initialConvId]);
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressActiveRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(60);
+        } catch {}
+      }
+
+      if (isCentralFamilyConv(c)) {
+        setInfoToast("La conversation 'Toute la Famille' est la discussion centrale et ne peut pas être supprimée.");
+        setTimeout(() => setInfoToast(null), 3500);
+      } else {
+        setConvToDelete(c);
+      }
+    }, 550);
+  }
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!touchStartPosRef.current) return;
+    const t = e.touches[0];
+    const dx = Math.abs(t.clientX - touchStartPosRef.current.x);
+    const dy = Math.abs(t.clientY - touchStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      cancelLongPress();
+    }
+  }
+
+  // Confirmation de suppression de conversation
+  async function confirmDeleteConversation() {
+    if (!convToDelete || !user) return;
+    setIsDeletingConv(true);
+    const convId = convToDelete.id;
+
+    try {
+      // 1. Supprimer les messages de la conversation
+      await supabase.from('messages').delete().eq('conversation_id', convId);
+
+      // 2. Supprimer les participants
+      await supabase.from('conversation_participants').delete().eq('conversation_id', convId);
+
+      // 3. Supprimer la ligne conversation
+      const { error } = await supabase.from('conversations').delete().eq('id', convId);
+      if (error) {
+        console.warn('Erreur suppression conv, tentative retrait participant fallback:', error);
+        await supabase
+          .from('conversation_participants')
+          .delete()
+          .match({ conversation_id: convId, user_id: user.id });
+      }
+
+      // Mise à jour optimiste
+      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      if (activeConv?.id === convId) {
+        setActiveConv(null);
+      }
+      setConvToDelete(null);
+    } catch (err: any) {
+      console.error('Erreur suppression conversation:', err);
+      alert('Impossible de supprimer la conversation : ' + (err?.message || 'Erreur inconnue'));
+    } finally {
+      setIsDeletingConv(false);
+    }
+  }
 
   // Charger les messages et écouter en temps réel
   useEffect(() => {
@@ -923,7 +1043,9 @@ function MessagesContent() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-gray-900 dark:text-white">Vos conversations</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Discussions de groupe et messages privés</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Discussions familiales • Appui long pour supprimer
+            </p>
           </div>
           <button
             onClick={() => setShowNewModal(true)}
@@ -956,53 +1078,104 @@ function MessagesContent() {
             {conversations.map((c) => {
               const other = getOtherParticipant(c);
               const title = getConvTitle(c);
+              const isCentral = isCentralFamilyConv(c);
+
               return (
-                <button
+                <div
                   key={c.id}
-                  onClick={() => setActiveConv(c)}
-                  className="w-full text-left bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-gray-100 dark:border-slate-700 hover:border-orange-200 dark:hover:border-slate-600 transition shadow-xs flex items-center gap-3"
+                  className="relative group select-none"
+                  onTouchStart={(e) => startLongPress(c, e.touches[0].clientX, e.touches[0].clientY)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={cancelLongPress}
+                  onTouchCancel={cancelLongPress}
+                  onMouseDown={(e) => startLongPress(c, e.clientX, e.clientY)}
+                  onMouseUp={cancelLongPress}
+                  onMouseLeave={cancelLongPress}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (isCentral) {
+                      setInfoToast("La conversation 'Toute la Famille' est la discussion centrale et ne peut pas être supprimée.");
+                      setTimeout(() => setInfoToast(null), 3500);
+                    } else {
+                      setConvToDelete(c);
+                    }
+                  }}
                 >
-                  <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 shadow-xs">
-                    {other?.avatar_url && !c.name ? (
-                      isPhotoUrl(other.avatar_url) ? (
-                        <img src={other.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center text-2xl">
-                          {other.avatar_url}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isLongPressActiveRef.current) {
+                        isLongPressActiveRef.current = false;
+                        return;
+                      }
+                      setActiveConv(c);
+                    }}
+                    className="w-full text-left bg-white dark:bg-slate-800 rounded-2xl p-3.5 border border-gray-100 dark:border-slate-700 hover:border-orange-200 dark:hover:border-slate-600 transition shadow-xs flex items-center gap-3 active:scale-[0.99]"
+                  >
+                    <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 shadow-xs">
+                      {other?.avatar_url && !c.name ? (
+                        isPhotoUrl(other.avatar_url) ? (
+                          <img src={other.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full bg-orange-100 dark:bg-slate-700 flex items-center justify-center text-2xl">
+                            {other.avatar_url}
+                          </div>
+                        )
+                      ) : !c.name && other ? (
+                        <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-bold text-base flex items-center justify-center">
+                          {other.full_name ? other.full_name[0].toUpperCase() : 'U'}
                         </div>
-                      )
-                    ) : !c.name && other ? (
-                      <div className="w-full h-full bg-gradient-to-tr from-orange-400 to-amber-500 text-white font-bold text-base flex items-center justify-center">
-                        {other.full_name ? other.full_name[0].toUpperCase() : 'U'}
+                      ) : (
+                        <div className="w-full h-full bg-orange-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 flex items-center justify-center font-bold">
+                          <Users className="w-6 h-6" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate">
+                            {title}
+                          </h3>
+                          {isCentral && (
+                            <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-orange-100 text-primary-700 dark:bg-primary-950 dark:text-primary-300 flex-shrink-0">
+                              Centrale
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500 flex items-center gap-1 flex-shrink-0">
+                          <Clock className="w-3 h-3" />
+                          {new Date(c.created_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </span>
                       </div>
-                    ) : (
-                      <div className="w-full h-full bg-orange-100 dark:bg-primary-950/60 text-primary-700 dark:text-primary-300 flex items-center justify-center font-bold">
-                        <Users className="w-6 h-6" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate">
-                        {title}
-                      </h3>
-                    <span className="text-[10px] text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {new Date(c.created_at).toLocaleDateString('fr-FR', {
-                        day: 'numeric',
-                        month: 'short',
-                      })}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                    Ouvrir la conversation en temps réel...
-                  </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                        Ouvrir la conversation en temps réel...
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Bouton poubelle rapide au survol sur PC (hors conversation centrale) */}
+                  {!isCentral && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConvToDelete(c);
+                      }}
+                      title="Supprimer cette conversation"
+                      className="hidden sm:group-hover:flex absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/60 dark:hover:bg-red-900/80 text-red-600 dark:text-red-400 transition shadow-xs items-center justify-center"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* MODAL NOUVELLE CONVERSATION */}
@@ -1092,6 +1265,57 @@ function MessagesContent() {
                 className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition disabled:opacity-40 shadow-sm"
               >
                 Démarrer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST D'INFORMATION (ex: protection Toute la Famille) */}
+      {infoToast && (
+        <div className="fixed top-16 left-4 right-4 max-w-sm mx-auto p-3 rounded-2xl bg-slate-900 text-white text-xs font-semibold shadow-2xl z-[120] flex items-center gap-2.5 animate-in slide-in-from-top border border-slate-700">
+          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <span className="flex-1 leading-tight">{infoToast}</span>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMATION DE SUPPRESSION DE CONVERSATION */}
+      {convToDelete && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[130] flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 border border-gray-100 dark:border-slate-700 animate-in zoom-in-95">
+            <div className="w-12 h-12 rounded-2xl bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="font-bold text-base text-gray-900 dark:text-white">
+                Supprimer la conversation ?
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                Voulez-vous supprimer la discussion avec{' '}
+                <strong className="text-gray-900 dark:text-white font-bold">
+                  {getConvTitle(convToDelete)}
+                </strong>{' '}
+                ? Tous les messages de ce fil seront effacés pour les participants.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setConvToDelete(null)}
+                disabled={isDeletingConv}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-slate-600 text-xs font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteConversation}
+                disabled={isDeletingConv}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md transition disabled:opacity-50"
+              >
+                {isDeletingConv ? 'Suppression...' : 'Supprimer'}
               </button>
             </div>
           </div>

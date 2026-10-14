@@ -296,3 +296,18 @@ begin
   end if;
 end $$;
 
+-- ====================================================================
+-- 10. Politiques de suppression pour les conversations (sauf Toute la Famille)
+-- ====================================================================
+drop policy if exists "Suppression conversations" on public.conversations;
+create policy "Suppression conversations" on public.conversations
+  for delete using (auth.role() = 'authenticated' and lower(coalesce(name, '')) != 'toute la famille');
+
+drop policy if exists "Suppression participants" on public.conversation_participants;
+create policy "Suppression participants" on public.conversation_participants
+  for delete using (auth.role() = 'authenticated');
+
+drop policy if exists "Suppression messages" on public.messages;
+create policy "Suppression messages" on public.messages
+  for delete using (auth.role() = 'authenticated');
+
