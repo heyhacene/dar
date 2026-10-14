@@ -77,4 +77,27 @@ export interface FamilyAlert {
   expires_at: string;
   created_at?: string;
   is_active?: boolean;
+  is_recurring?: boolean;
+  recurrence_days?: number[]; // [0..6] (0=Dimanche, 1=Lundi, 2=Mardi, 3=Mercredi, 4=Jeudi, 5=Vendredi, 6=Samedi)
+  time_start?: string; // ex: "18:00"
+  time_end?: string; // ex: "21:00"
 }
+
+export interface FamilyTask {
+  id: string;
+  title: string;
+  description?: string;
+  assigned_to?: string | null;
+  assigned_name?: string;
+  assigned_avatar?: string;
+  priority?: 'low' | 'normal' | 'high';
+  due_date?: string | null;
+  completed: boolean;
+  completed_at?: string | null;
+  completed_by?: string | null;
+  created_by?: string | null;
+  created_by_name?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+

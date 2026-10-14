@@ -33,12 +33,12 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-100 px-4 py-3 flex items-center justify-between shadow-xs">
+    <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-gray-100 dark:border-slate-800 px-4 py-3 flex items-center justify-between shadow-xs transition-colors">
       <div className="flex items-center gap-2.5">
         <Logo className="w-9 h-9 shadow-xs rounded-2xl" />
         <div>
-          <h1 className="text-lg font-bold text-gray-900 leading-tight">{title}</h1>
-          <p className="text-xs text-primary-600 font-semibold tracking-wide">Dar</p>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{title}</h1>
+          <p className="text-xs text-primary-600 dark:text-primary-400 font-semibold tracking-wide">Dar</p>
         </div>
       </div>
 
@@ -47,7 +47,7 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
           <button
             onClick={handleRefresh}
             disabled={loading}
-            className="p-2 text-gray-500 hover:text-primary-600 rounded-xl hover:bg-orange-50 transition"
+            className="p-2 text-gray-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-xl hover:bg-orange-50 dark:hover:bg-slate-800 transition"
             title="Synchroniser"
           >
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin text-primary-600' : ''}`} />
@@ -68,14 +68,14 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
         </button>
         <Link
           href="/settings"
-          className="p-2 text-gray-500 hover:text-primary-600 rounded-xl hover:bg-orange-50 transition"
+          className="p-2 text-gray-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 rounded-xl hover:bg-orange-50 dark:hover:bg-slate-800 transition"
           title="Paramètres & Apparence"
         >
           <Settings className="w-5 h-5" />
         </Link>
         <button
           onClick={handleLogout}
-          className="p-2 text-gray-400 hover:text-red-500 rounded-xl hover:bg-red-50 transition"
+          className="p-2 text-gray-400 dark:text-slate-400 hover:text-red-500 rounded-xl hover:bg-red-50 dark:hover:bg-red-950/40 transition"
           title="Se déconnecter"
         >
           <LogOut className="w-5 h-5" />

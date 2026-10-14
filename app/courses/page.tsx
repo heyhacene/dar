@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import { AppData, ShoppingItem } from '@/types';
-import { loadLocalData, loadCloudData, syncKitchenCloud } from '@/lib/storage';
+import { loadLocalData, loadCloudData, syncKitchenCloud, flushKitchenOfflineQueue } from '@/lib/storage';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import {
   Check,
@@ -20,6 +20,7 @@ import {
   Sparkles,
   MessageCircle,
   X,
+  WifiOff,
 } from 'lucide-react';
 import Link from 'next/link';
 import CuisineTabs from '@/components/CuisineTabs';
@@ -73,32 +74,57 @@ export default function CoursesPage() {
   const [groupByAisle, setGroupByAisle] = useState(true);
   const [showShareModal, setShowShareModal] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     // 1. Chargement instantané depuis le cache local
     const loaded = loadLocalData();
     setData(loaded);
 
-    // 2. Synchronisation depuis le cloud Supabase
-    loadCloudData().then((cloudData) => {
-      setData(cloudData);
-    });
+    // 2. Détection de connectivité
+    if (typeof window !== 'undefined') {
+      setIsOffline(!navigator.onLine);
+      const handleOnline = () => {
+        setIsOffline(false);
+        flushKitchenOfflineQueue().then(() => {
+          loadCloudData().then((fresh) => setData(fresh));
+        });
+      };
+      const handleOffline = () => {
+        setIsOffline(true);
+      };
 
-    // 3. Écoute temps réel pour les courses (ex: un membre coche un article au supermarché)
-    if (isSupabaseConfigured()) {
-      const channel = supabase
-        .channel('courses_realtime')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'family_kitchen' },
-          () => {
-            loadCloudData().then((fresh) => setData(fresh));
-          }
-        )
-        .subscribe();
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // 3. Synchronisation depuis le cloud Supabase
+      loadCloudData().then((cloudData) => {
+        setData(cloudData);
+      });
+
+      // 4. Écoute temps réel pour les courses (ex: un membre coche un article au supermarché)
+      if (isSupabaseConfigured()) {
+        const channel = supabase
+          .channel('courses_realtime')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'family_kitchen' },
+            () => {
+              loadCloudData().then((fresh) => setData(fresh));
+            }
+          )
+          .subscribe();
+
+        return () => {
+          window.removeEventListener('online', handleOnline);
+          window.removeEventListener('offline', handleOffline);
+          supabase.removeChannel(channel);
+        };
+      }
 
       return () => {
-        supabase.removeChannel(channel);
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
       };
     }
   }, []);
@@ -364,6 +390,16 @@ export default function CoursesPage() {
       <CuisineTabs />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">
+        {/* BANNIÈRE HORS-LIGNE / EN MAGASIN */}
+        {isOffline && (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-3 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2.5 shadow-xs animate-in fade-in">
+            <WifiOff className="w-5 h-5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="flex-1">
+              <span className="font-bold">Mode magasin / Hors-ligne actif :</span> Vos courses sont affichées depuis la mémoire de votre appareil. Cochez vos articles sans crainte, tout sera synchronisé dès le retour du réseau.
+            </div>
+          </div>
+        )}
+
         {/* Sélecteur de période pour les courses (2 semaines) */}
         <div className="grid grid-cols-3 p-1 bg-gray-200/70 dark:bg-slate-800 rounded-2xl text-[11px] font-bold shadow-xs">
           <button

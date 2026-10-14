@@ -230,8 +230,17 @@ create table if not exists public.family_alerts (
   created_by uuid references public.profiles(id) on delete set null,
   expires_at timestamp with time zone not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  is_active boolean default true
+  is_active boolean default true,
+  is_recurring boolean default false,
+  recurrence_days jsonb default '[]'::jsonb,
+  time_start text,
+  time_end text
 );
+
+alter table public.family_alerts add column if not exists is_recurring boolean default false;
+alter table public.family_alerts add column if not exists recurrence_days jsonb default '[]'::jsonb;
+alter table public.family_alerts add column if not exists time_start text;
+alter table public.family_alerts add column if not exists time_end text;
 
 alter table public.family_alerts enable row level security;
 drop policy if exists "Lecture alertes" on public.family_alerts;
@@ -246,6 +255,44 @@ do $$
 begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'family_alerts') then
     alter publication supabase_realtime add table public.family_alerts;
+  end if;
+end $$;
+
+-- ====================================================================
+-- 9. Table des Tâches Familiales (To-Do List partagée avec affectation)
+-- ====================================================================
+create table if not exists public.family_tasks (
+  id text primary key,
+  title text not null,
+  description text,
+  assigned_to uuid references public.profiles(id) on delete set null,
+  assigned_name text,
+  assigned_avatar text,
+  priority text default 'normal' check (priority in ('low', 'normal', 'high')),
+  due_date date,
+  completed boolean default false,
+  completed_at timestamp with time zone,
+  completed_by uuid references public.profiles(id) on delete set null,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_by_name text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.family_tasks enable row level security;
+drop policy if exists "Lecture taches" on public.family_tasks;
+create policy "Lecture taches" on public.family_tasks for select using (auth.role() = 'authenticated');
+drop policy if exists "Creation taches" on public.family_tasks;
+create policy "Creation taches" on public.family_tasks for insert with check (auth.role() = 'authenticated');
+drop policy if exists "Maj taches" on public.family_tasks;
+create policy "Maj taches" on public.family_tasks for update using (auth.role() = 'authenticated');
+drop policy if exists "Suppression taches" on public.family_tasks;
+create policy "Suppression taches" on public.family_tasks for delete using (auth.role() = 'authenticated');
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'family_tasks') then
+    alter publication supabase_realtime add table public.family_tasks;
   end if;
 end $$;
 

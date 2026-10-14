@@ -74,13 +74,22 @@ export function saveLocalData(data: AppData): void {
  * Charge l'ensemble des données cuisine (Recettes + Planning + Courses) depuis Supabase.
  * Met également à jour le cache localStorage.
  */
+export const PENDING_KITCHEN_SYNC_KEY = 'dar_pending_kitchen_sync';
+
+/**
+ * Charge les données depuis le Cloud Supabase avec secours automatique sur le cache local
+ * en cas d'absence de réseau ou de connexion lente (ex: supermarché).
+ */
 export async function loadCloudData(): Promise<AppData> {
   const local = loadLocalData();
   if (!isSupabaseConfigured()) {
     return local;
   }
 
-  try {
+  // Tenter de vider la file d'attente hors-ligne si le réseau est revenu
+  flushKitchenOfflineQueue().catch(() => {});
+
+  const fetchPromise = async (): Promise<AppData> => {
     // 1. Charger les recettes depuis Supabase
     const { data: cloudRecipes, error: recError } = await supabase
       .from('recipes')
@@ -130,8 +139,19 @@ export async function loadCloudData(): Promise<AppData> {
 
     saveLocalData(merged);
     return merged;
+  };
+
+  const timeoutPromise = new Promise<AppData>((resolve) => {
+    // Si la connexion traîne plus de 3.5s (ex: rayon sans réseau), on renvoie immédiatement le cache local
+    setTimeout(() => {
+      resolve(local);
+    }, 3500);
+  });
+
+  try {
+    return await Promise.race([fetchPromise(), timeoutPromise]);
   } catch (err) {
-    console.warn('Erreur chargement Supabase Cloud Cuisine:', err);
+    console.warn('Erreur chargement Supabase Cloud Cuisine, utilisation du cache local:', err);
     return local;
   }
 }
@@ -203,7 +223,33 @@ export async function deleteCloudRecipe(recipeId: string): Promise<AppData> {
 }
 
 /**
+ * Vide la file d'attente hors-ligne vers Supabase dès que le réseau est disponible
+ */
+export async function flushKitchenOfflineQueue() {
+  if (typeof window === 'undefined' || !isSupabaseConfigured()) return;
+  try {
+    const raw = localStorage.getItem(PENDING_KITCHEN_SYNC_KEY);
+    if (!raw) return;
+    const pendingData = JSON.parse(raw);
+    if (!pendingData) return;
+
+    await supabase.from('family_kitchen').upsert({
+      id: 'main',
+      weekly_plan: pendingData.weeklyPlan || {},
+      custom_shopping_items: pendingData.customShoppingItems || [],
+      checked_items: pendingData.checkedItems || {},
+      updated_at: new Date().toISOString(),
+    });
+
+    localStorage.removeItem(PENDING_KITCHEN_SYNC_KEY);
+  } catch (err) {
+    console.warn('Tentative sync offline kitchen en attente du réseau:', err);
+  }
+}
+
+/**
  * Synchronise l'état du planning et de la liste de courses vers le Cloud Supabase
+ * avec sauvegarde locale immédiate et file d'attente hors-ligne si pas de réseau.
  */
 export async function syncKitchenCloud(
   weeklyPlan: Record<string, PlannedMeal>,
@@ -219,19 +265,32 @@ export async function syncKitchenCloud(
     lastSync: new Date().toISOString(),
   };
 
+  // 1. Sauvegarde locale synchrone immédiate (le client ne perd jamais son action en magasin)
   saveLocalData(updated);
 
+  // 2. Synchronisation Cloud ou mise en file d'attente
   if (isSupabaseConfigured()) {
     try {
-      await supabase.from('family_kitchen').upsert({
+      const { error } = await supabase.from('family_kitchen').upsert({
         id: 'main',
         weekly_plan: weeklyPlan,
         custom_shopping_items: customShoppingItems,
         checked_items: checkedItems,
         updated_at: new Date().toISOString(),
       });
+
+      if (error) throw error;
+      // Nettoyer la file d'attente si la synchro cloud a réussi
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(PENDING_KITCHEN_SYNC_KEY);
+      }
     } catch (err) {
-      console.error('Erreur sync family_kitchen:', err);
+      console.warn('Hors-ligne : mise en file d\'attente de la synchronisation courses/repas');
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(PENDING_KITCHEN_SYNC_KEY, JSON.stringify(updated));
+        } catch (e) {}
+      }
     }
   }
 
