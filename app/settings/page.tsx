@@ -32,6 +32,7 @@ import {
   getSystemNotificationPreference,
   setSystemNotificationPreference,
   requestNotificationPermission,
+  requestNotificationPermissionDetailed,
   sendLocalNotification,
   getNotificationSoundPreference,
   setNotificationSoundPreference,
@@ -71,20 +72,30 @@ export default function SettingsPage() {
 
   async function handleToggleSystemNotifications() {
     if (!systemNotifEnabled) {
-      const perm = await requestNotificationPermission();
-      setNotifPermission(perm);
+      const result = await requestNotificationPermissionDetailed();
+      setNotifPermission(result.status);
 
-      if (perm === 'granted') {
+      if (result.status === 'granted') {
         setSystemNotifEnabled(true);
         setSystemNotificationPreference(true);
         await sendLocalNotification('Notifications activées ! 🎉', {
           body: 'Le volet de notification de votre appareil est désormais connecté à Dar.',
         });
+      } else if (result.needsApkUpdate) {
+        setSystemNotifEnabled(false);
+        setSystemNotificationPreference(false);
+        alert(
+          "📲 Mise à jour de l'application Dar requise :\n\n" +
+          "Pour faire apparaître les alertes dans le volet Android, vous devez installer le nouvel APK (Dar.apk).\n\n" +
+          "La nouvelle version intègre les pilotes natifs Android. Téléchargez-la via le bouton 'Télécharger le nouvel APK' ci-dessous."
+        );
       } else {
         setSystemNotifEnabled(false);
         setSystemNotificationPreference(false);
         alert(
-          "Les notifications sont bloquées par votre appareil ou navigateur.\n\nPour les activer, ouvrez les Paramètres de votre téléphone > Applications > Dar > Notifications et cochez 'Autoriser'."
+          "Les notifications sont bloquées par votre appareil ou navigateur.\n\n" +
+          "1. Ouvrez Paramètres du téléphone > Applications > Dar > Notifications et activez 'Autoriser'.\n" +
+          "2. Si vous accédez à Dar depuis Chrome, cliquez sur les paramètres du site (icône cadenas) pour autoriser les notifications."
         );
       }
     } else {
@@ -409,6 +420,41 @@ export default function SettingsPage() {
               )}
             </button>
           </div>
+        </div>
+
+        {/* TÉLÉCHARGEMENT APPLICATION ANDROID (APK) */}
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-slate-800 dark:to-slate-800 p-4 rounded-3xl border border-orange-200/80 dark:border-slate-700 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-orange-500 text-white rounded-xl">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-bold text-sm text-gray-900 dark:text-white">Application Android (APK)</h2>
+                <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                  Version native avec volet de notifications et fichiers .ics
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300">
+              v1.2.0
+            </span>
+          </div>
+
+          <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+            Pour que les alertes dans le volet et l'ouverture automatique des fichiers calendrier (*.ics) fonctionnent, installez la dernière version de <strong>Dar.apk</strong>.
+          </p>
+
+          <a
+            href="https://github.com/heyhacene/dar/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+          >
+            <Download className="w-4 h-4" />
+            <span>Télécharger la dernière version de Dar.apk</span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+          </a>
         </div>
 
         {/* SYNCHRONISATION DES DONNÉES */}

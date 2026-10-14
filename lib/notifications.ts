@@ -82,38 +82,98 @@ export function getNotificationPermission(): NotificationPermission {
 }
 
 /**
- * Demande la permission d'afficher des notifications dans le volet du système
+ * Résultat détaillé de la demande de permission
  */
-export async function requestNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof window === 'undefined') return 'denied';
+export interface NotificationPermissionResult {
+  status: NotificationPermission;
+  needsApkUpdate: boolean;
+  errorMessage?: string;
+  platform: 'android' | 'ios' | 'web';
+}
+
+/**
+ * Demande la permission d'afficher des notifications dans le volet du système avec détails
+ */
+export async function requestNotificationPermissionDetailed(): Promise<NotificationPermissionResult> {
+  if (typeof window === 'undefined') {
+    return { status: 'denied', needsApkUpdate: false, platform: 'web' };
+  }
 
   // 1. Environnement Android Natif (Capacitor)
   if (Capacitor.isNativePlatform()) {
     try {
-      const req = await LocalNotifications.requestPermissions();
-      const status: NotificationPermission =
-        req.display === 'granted' ? 'granted' : req.display === 'denied' ? 'denied' : 'default';
+      let status: NotificationPermission = 'default';
+
+      // 1.1 Vérifier si déjà accordé dans les paramètres du téléphone (ex: l'utilisateur a activé dans Paramètres > Applications > Dar)
+      try {
+        const check = await LocalNotifications.checkPermissions();
+        if (check.display === 'granted') {
+          status = 'granted';
+        }
+      } catch (checkErr: any) {
+        const msg = String(checkErr?.message || checkErr || '').toLowerCase();
+        if (msg.includes('not implemented') || checkErr?.code === 'UNIMPLEMENTED') {
+          return {
+            status: 'denied',
+            needsApkUpdate: true,
+            errorMessage: "Le plugin natif n'est pas encore présent dans l'APK installé sur l'appareil.",
+            platform: 'android',
+          };
+        }
+      }
+
+      // 1.2 Si pas encore accordé, demander la permission système
+      if (status !== 'granted') {
+        const req = await LocalNotifications.requestPermissions();
+        status = req.display === 'granted' ? 'granted' : req.display === 'denied' ? 'denied' : 'default';
+      }
 
       localStorage.setItem('dar_native_notif_perm', status);
 
       if (status === 'granted') {
         localStorage.setItem('dar_system_notif_enabled', 'true');
-        // Initialiser le canal de notification Android haute priorité
-        await LocalNotifications.createChannel({
-          id: 'dar_alerts',
-          name: 'Alertes Dar',
-          description: 'Messages de la famille, rappels calendrier et tâches',
-          importance: 5, // IMPORTANCE_HIGH (bannière flottante + volet de notification)
-          visibility: 1, // PUBLIC
-          vibration: true,
-          lights: true,
-          lightColor: '#ee7318',
-        });
+        // Initialiser le canal haute priorité de manière sécurisée et non-bloquante
+        try {
+          await LocalNotifications.createChannel({
+            id: 'dar_alerts',
+            name: 'Alertes Dar',
+            description: 'Messages de la famille, rappels calendrier et tâches',
+            importance: 5, // IMPORTANCE_HIGH
+            visibility: 1, // PUBLIC
+            vibration: true,
+            lights: true,
+            lightColor: '#ee7318',
+          });
+        } catch (chanErr) {
+          console.warn('Erreur non-bloquante création canal Android:', chanErr);
+        }
       }
-      return status;
-    } catch (err) {
+
+      return {
+        status,
+        needsApkUpdate: false,
+        platform: 'android',
+      };
+    } catch (err: any) {
       console.warn('Erreur demande permission native Capacitor:', err);
-      return 'denied';
+      const msg = String(err?.message || err || '').toLowerCase();
+      const isUnimplemented = msg.includes('not implemented') || err?.code === 'UNIMPLEMENTED';
+
+      if (isUnimplemented) {
+        return {
+          status: 'denied',
+          needsApkUpdate: true,
+          errorMessage: "L'application Dar sur votre téléphone doit être mise à jour avec le nouvel APK.",
+          platform: 'android',
+        };
+      }
+
+      return {
+        status: 'denied',
+        needsApkUpdate: false,
+        errorMessage: err?.message || String(err),
+        platform: 'android',
+      };
     }
   }
 
@@ -124,14 +184,31 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
       if (perm === 'granted') {
         localStorage.setItem('dar_system_notif_enabled', 'true');
       }
-      return perm;
-    } catch (err) {
+      return {
+        status: perm,
+        needsApkUpdate: false,
+        platform: 'web',
+      };
+    } catch (err: any) {
       console.error('Erreur demande permission notifications:', err);
-      return 'denied';
+      return {
+        status: 'denied',
+        needsApkUpdate: false,
+        errorMessage: err?.message || String(err),
+        platform: 'web',
+      };
     }
   }
 
-  return 'denied';
+  return { status: 'denied', needsApkUpdate: false, platform: 'web' };
+}
+
+/**
+ * Demande la permission d'afficher des notifications dans le volet du système
+ */
+export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  const res = await requestNotificationPermissionDetailed();
+  return res.status;
 }
 
 /**
