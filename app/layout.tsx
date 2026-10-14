@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { AuthProvider } from '@/lib/authContext';
 import FamilyAlertBanner from '@/components/FamilyAlertBanner';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
+import AppUpdateNotifier from '@/components/AppUpdateNotifier';
 
 export const metadata: Metadata = {
   title: 'Dar | Espace Familial',
@@ -62,6 +63,7 @@ export default function RootLayout({
       <body className="h-full flex flex-col max-w-lg mx-auto bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 shadow-xl min-h-screen relative pb-36 transition-colors duration-200">
         <AuthProvider>
           <ServiceWorkerRegister />
+          <AppUpdateNotifier />
           <FamilyAlertBanner />
           <main className="flex-1">{children}</main>
           <BottomNav />
