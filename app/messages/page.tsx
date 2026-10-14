@@ -686,12 +686,13 @@ function MessagesContent() {
                       }`}
                     >
                       <p className="leading-relaxed whitespace-pre-wrap">{m.content}</p>
-                    <div
-                      className={`text-[9px] mt-1 text-right ${
-                        isMine ? 'text-orange-100' : 'text-gray-400 dark:text-slate-400'
-                      }`}
-                    >
-                      {timeStr}
+                      <div
+                        className={`text-[9px] mt-1 text-right ${
+                          isMine ? 'text-orange-100' : 'text-gray-400 dark:text-slate-400'
+                        }`}
+                      >
+                        {timeStr}
+                      </div>
                     </div>
                   </div>
                 </div>
