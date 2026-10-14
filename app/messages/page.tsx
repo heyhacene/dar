@@ -998,9 +998,10 @@ function MessagesContent() {
                   </p>
                 </div>
               </button>
-            ))}
-          </div>
-        )}
+            );
+          })}
+        </div>
+      )}
       </div>
 
       {/* MODAL NOUVELLE CONVERSATION */}
