@@ -101,7 +101,7 @@ export default function AppUpdateNotifier() {
         <div className="min-w-0">
           <div className="font-bold text-xs leading-tight">Mise à jour disponible !</div>
           <div className="text-[10px] text-orange-100 truncate">
-            Une nouvelle version de Dar est prête
+            Une nouvelle version de Keo Family est prête
           </div>
         </div>
       </div>
