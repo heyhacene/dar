@@ -104,7 +104,7 @@ export async function requestNotificationPermissionDetailed(): Promise<Notificat
     try {
       let status: NotificationPermission = 'default';
 
-      // 1.1 Vérifier si déjà accordé dans les paramètres du téléphone (ex: l'utilisateur a activé dans Paramètres > Applications > Dar)
+      // 1.1 Vérifier si déjà accordé dans les paramètres du téléphone (ex: l'utilisateur a activé dans Paramètres > Applications > Keo Family)
       try {
         const check = await LocalNotifications.checkPermissions();
         if (check.display === 'granted') {
@@ -136,7 +136,7 @@ export async function requestNotificationPermissionDetailed(): Promise<Notificat
         try {
           await LocalNotifications.createChannel({
             id: 'dar_alerts',
-            name: 'Alertes Dar',
+            name: 'Alertes Keo Family',
             description: 'Messages de la famille, rappels calendrier et tâches',
             importance: 5, // IMPORTANCE_HIGH
             visibility: 1, // PUBLIC
@@ -163,7 +163,7 @@ export async function requestNotificationPermissionDetailed(): Promise<Notificat
         return {
           status: 'denied',
           needsApkUpdate: true,
-          errorMessage: "L'application Dar sur votre téléphone doit être mise à jour avec le nouvel APK.",
+          errorMessage: "L'application Keo Family sur votre téléphone doit être mise à jour avec le nouvel APK.",
           platform: 'android',
         };
       }
@@ -367,7 +367,7 @@ export async function sendLocalNotification(
 
       await LocalNotifications.createChannel({
         id: 'dar_alerts',
-        name: 'Alertes Dar',
+        name: 'Alertes Keo Family',
         description: 'Messages, agenda et alertes familiales',
         importance: 5,
         visibility: 1,

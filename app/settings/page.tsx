@@ -79,14 +79,14 @@ export default function SettingsPage() {
         setSystemNotifEnabled(true);
         setSystemNotificationPreference(true);
         await sendLocalNotification('Notifications activées ! 🎉', {
-          body: 'Le volet de notification de votre appareil est désormais connecté à Dar.',
+          body: 'Le volet de notification de votre appareil est désormais connecté à Keo Family.',
         });
       } else if (result.needsApkUpdate) {
         setSystemNotifEnabled(false);
         setSystemNotificationPreference(false);
         alert(
-          "📲 Mise à jour de l'application Dar requise :\n\n" +
-          "Pour faire apparaître les alertes dans le volet Android, vous devez installer le nouvel APK (Dar.apk).\n\n" +
+          "📲 Mise à jour de l'application Keo Family requise :\n\n" +
+          "Pour faire apparaître les alertes dans le volet Android, vous devez installer le nouvel APK.\n\n" +
           "La nouvelle version intègre les pilotes natifs Android. Téléchargez-la via le bouton 'Télécharger le nouvel APK' ci-dessous."
         );
       } else {
@@ -94,8 +94,8 @@ export default function SettingsPage() {
         setSystemNotificationPreference(false);
         alert(
           "Les notifications sont bloquées par votre appareil ou navigateur.\n\n" +
-          "1. Ouvrez Paramètres du téléphone > Applications > Dar > Notifications et activez 'Autoriser'.\n" +
-          "2. Si vous accédez à Dar depuis Chrome, cliquez sur les paramètres du site (icône cadenas) pour autoriser les notifications."
+          "1. Ouvrez Paramètres du téléphone > Applications > Keo Family > Notifications et activez 'Autoriser'.\n" +
+          "2. Si vous accédez à Keo Family depuis Chrome, cliquez sur les paramètres du site (icône cadenas) pour autoriser les notifications."
         );
       }
     } else {
@@ -119,7 +119,7 @@ export default function SettingsPage() {
         }
       }
       localStorage.setItem('dar_app_version', '1.2.0');
-      setUpdateStatus('Mise à jour terminée ! Rechargement de Dar...');
+      setUpdateStatus('Mise à jour terminée ! Rechargement de Keo Family...');
       setTimeout(() => {
         window.location.reload();
       }, 1000);
@@ -173,7 +173,7 @@ export default function SettingsPage() {
                   Mises à jour de l'application
                 </h2>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Version installée : <span className="font-bold text-primary-600 dark:text-primary-400">Dar v1.2.0</span>
+                  Version installée : <span className="font-bold text-primary-600 dark:text-primary-400">Keo Family v1.2.0</span>
                 </p>
               </div>
             </div>
@@ -211,7 +211,7 @@ export default function SettingsPage() {
               className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
             >
               <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-              <span>Télécharger directement l'APK Android (Dar.apk)</span>
+              <span>Télécharger directement l'APK Android (Keo Family)</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-60" />
             </a>
           </div>
@@ -394,7 +394,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => {
-                sendLocalNotification('Notification de test Dar 🔔', {
+                sendLocalNotification('Notification de test Keo Family 🔔', {
                   body: `La notification apparaît dans votre volet avec la sonnerie « ${
                     NOTIFICATION_SOUNDS.find((s) => s.id === soundType)?.name || 'Carillon'
                   } » !`,
@@ -442,7 +442,7 @@ export default function SettingsPage() {
           </div>
 
           <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-            Pour que les alertes dans le volet et l'ouverture automatique des fichiers calendrier (*.ics) fonctionnent, installez la dernière version de <strong>Dar.apk</strong>.
+            Pour que les alertes dans le volet et l'ouverture automatique des fichiers calendrier (*.ics) fonctionnent, installez la dernière version de <strong>Keo Family</strong>.
           </p>
 
           <a
@@ -452,7 +452,7 @@ export default function SettingsPage() {
             className="w-full py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>Télécharger la dernière version de Dar.apk</span>
+            <span>Télécharger la dernière version de Keo Family (APK)</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-80" />
           </a>
         </div>

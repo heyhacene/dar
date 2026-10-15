@@ -399,7 +399,7 @@ export default function AgendaPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dar-agenda-famille-${new Date().toISOString().slice(0, 10)}.ics`;
+    a.download = `keo-family-agenda-${new Date().toISOString().slice(0, 10)}.ics`;
     a.click();
     URL.revokeObjectURL(url);
   }

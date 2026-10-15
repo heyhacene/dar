@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dar-v12';
+const CACHE_NAME = 'keofamily-v13';
 
 // Fichiers clés à pré-mettre en cache pour fonctionnement hors-ligne immédiat
 const PRECACHE_URLS = [

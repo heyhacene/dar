@@ -355,7 +355,7 @@ function MessagesContent() {
 
           // Envoyer une notification locale si le message provient d'un autre utilisateur
           if (user && newMsg.sender_id !== user.id) {
-            const senderName = profilesMap[newMsg.sender_id]?.full_name || 'Dar Famille';
+            const senderName = profilesMap[newMsg.sender_id]?.full_name || 'Keo Family';
             const pollData = parsePoll(newMsg.content);
             const notifBody = pollData
               ? `📊 Sondage : ${pollData.question}`
