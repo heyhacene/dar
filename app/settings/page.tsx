@@ -23,6 +23,9 @@ import {
   Volume2,
   VolumeX,
   Music,
+  Coffee,
+  Heart,
+  LifeBuoy,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import {
@@ -437,7 +440,7 @@ export default function SettingsPage() {
               </div>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300">
-              v1.2.0
+              v1.3.0
             </span>
           </div>
 
@@ -455,6 +458,42 @@ export default function SettingsPage() {
             <span>Télécharger la dernière version de Keo Family (APK)</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-80" />
           </a>
+        </div>
+
+        {/* SOUTIEN DU PROJET & ASSISTANCE */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800 p-4 rounded-3xl border border-amber-200/80 dark:border-slate-700 shadow-sm space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-gradient-to-tr from-amber-500 to-orange-500 text-white rounded-xl shadow-xs">
+              <Heart className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm text-gray-900 dark:text-white">Soutenir le projet & Assistance</h2>
+              <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                Une suggestion, un besoin d'aide ou envie d'encourager le développement ?
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <a
+              href="https://ko-fi.com/keo_app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-3 rounded-2xl bg-[#FF5E5B] hover:bg-[#e04f4c] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Coffee className="w-4 h-4" />
+              <span>Offrir un café sur Ko-fi</span>
+              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+            </a>
+
+            <a
+              href="mailto:heyhacene@gmail.com?subject=%5BKeo%20Family%5D%20Assistance%20%26%20Feedback"
+              className="w-full py-2.5 px-3 rounded-2xl bg-white dark:bg-slate-700 hover:bg-gray-50 dark:hover:bg-slate-650 text-gray-800 dark:text-white border border-gray-200 dark:border-slate-600 text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+            >
+              <LifeBuoy className="w-4 h-4 text-orange-500" />
+              <span>Assistance & Feedback</span>
+            </a>
+          </div>
         </div>
 
         {/* SYNCHRONISATION DES DONNÉES */}
