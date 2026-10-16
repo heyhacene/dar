@@ -95,12 +95,15 @@ jobs:
             ./gradlew assembleDebug --stacktrace
             cp app/build/outputs/apk/debug/app-debug.apk ../build-output/Dar.apk
           fi
+          cp ../build-output/Dar.apk "../build-output/KeoFamily-Build-${{ github.run_number }}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Dar-Android-APK
-          path: build-output/Dar.apk
+          path: |
+            build-output/Dar.apk
+            build-output/KeoFamily-Build-${{ github.run_number }}.apk
           retention-days: 30
 
       - name: Publish APK to GitHub Releases
@@ -110,13 +113,15 @@ jobs:
           tag_name: v1.3.0-build.${{ github.run_number }}
           name: "Keo Family v1.3.0 (Build ${{ github.run_number }})"
           body: |
-            Cliquez sur **Dar.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android.
+            Cliquez sur **KeoFamily-Build-${{ github.run_number }}.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android.
+            - Fichier : **KeoFamily-Build-${{ github.run_number }}.apk**
             - Version : v1.3.0 (Build ${{ github.run_number }})
+            - Coffre de documents familiaux sécurisé (cartes, passeports, santé)
+            - Notifications Push collaboratives (courses, repas, santé)
             - Déverrouillage par empreinte digitale / biométrie
-            - Signature cryptographique Release officielle (v1, v2, v3)
-            - Support des rendez-vous Doctolib et fichiers .ics
-            - Notifications dans le volet système
-          files: build-output/Dar.apk
+          files: |
+            build-output/Dar.apk
+            build-output/KeoFamily-Build-${{ github.run_number }}.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
