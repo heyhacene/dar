@@ -27,6 +27,7 @@ import {
   Coffee,
   Heart,
   LifeBuoy,
+  Bot,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/lib/authContext';
@@ -616,6 +617,18 @@ export default function SettingsPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('dar:open-chatbot'));
+                }
+              }}
+              className="w-full sm:col-span-2 py-2.5 px-3 rounded-2xl bg-gradient-to-r from-primary-600 to-amber-500 hover:from-primary-700 hover:to-amber-600 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Bot className="w-4 h-4" />
+              <span>Discuter avec l'Assistant Keo (Chatbot)</span>
+            </button>
+
             <a
               href="https://ko-fi.com/keo_app"
               target="_blank"

@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, Moon, RefreshCw, Sun, Settings } from 'lucide-react';
+import { LogOut, Moon, RefreshCw, Sun, Settings, Bot } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
@@ -65,6 +65,18 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
         >
           {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
           <span className="hidden sm:inline">{isDark ? 'Clair' : 'Sombre'}</span>
+        </button>
+        <button
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('dar:open-chatbot'));
+            }
+          }}
+          className="p-2 text-primary-600 dark:text-amber-400 hover:text-primary-700 dark:hover:text-amber-300 rounded-xl hover:bg-orange-50 dark:hover:bg-slate-800 transition"
+          title="Assistant Support Keo (Chatbot)"
+          aria-label="Assistant Support Keo"
+        >
+          <Bot className="w-5 h-5" />
         </button>
         <Link
           href="/settings"

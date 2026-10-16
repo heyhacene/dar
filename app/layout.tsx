@@ -8,6 +8,7 @@ import FamilyAlertBanner from '@/components/FamilyAlertBanner';
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister';
 import AppUpdateNotifier from '@/components/AppUpdateNotifier';
 import GlobalNotificationListener from '@/components/GlobalNotificationListener';
+import SupportChatbot from '@/components/SupportChatbot';
 
 export const metadata: Metadata = {
   title: 'Keo Family | Espace Familial',
@@ -68,6 +69,7 @@ export default function RootLayout({
           <GlobalNotificationListener />
           <FamilyAlertBanner />
           <main className="flex-1">{children}</main>
+          <SupportChatbot />
           <BottomNav />
         </AuthProvider>
       </body>
