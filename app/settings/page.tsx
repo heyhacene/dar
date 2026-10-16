@@ -23,8 +23,16 @@ import {
   Volume2,
   VolumeX,
   Music,
+  Fingerprint,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
+import { useAuth } from '@/lib/authContext';
+import {
+  isBiometricAvailable,
+  isBiometricConfigured,
+  enableBiometric,
+  disableBiometric,
+} from '@/lib/biometrics';
 import {
   isNotificationSupported,
   getNotificationPermission,
@@ -38,6 +46,7 @@ import {
 } from '@/lib/notifications';
 
 export default function SettingsPage() {
+  const { user, profile } = useAuth();
   const [data, setData] = useState<AppData | null>(null);
   const { preference, setPreference } = useTheme();
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
@@ -46,6 +55,14 @@ export default function SettingsPage() {
   // Préférences sonores des notifications
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundType, setSoundType] = useState<NotificationSoundType>('chime');
+
+  // Biométrie
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioConfigured, setBioConfigured] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioMsg, setBioMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [showBioPasswordPrompt, setShowBioPasswordPrompt] = useState(false);
+  const [bioPassword, setBioPassword] = useState('');
 
   // Mises à jour
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -59,7 +76,44 @@ export default function SettingsPage() {
     const soundPref = getNotificationSoundPreference();
     setSoundEnabled(soundPref.enabled);
     setSoundType(soundPref.sound);
+
+    isBiometricAvailable().then((avail) => setBioSupported(avail));
+    setBioConfigured(isBiometricConfigured());
   }, []);
+
+  const handleToggleBio = () => {
+    setBioMsg(null);
+    if (bioConfigured) {
+      disableBiometric();
+      setBioConfigured(false);
+      setBioMsg({ text: 'Connexion par empreinte désactivée.', type: 'success' });
+    } else {
+      setShowBioPasswordPrompt(true);
+    }
+  };
+
+  const handleConfirmBioPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bioPassword) return;
+    setBioLoading(true);
+    setBioMsg(null);
+    try {
+      const emailToUse = user?.email || 'famille@dar.app';
+      const res = await enableBiometric(emailToUse, bioPassword, profile?.full_name);
+      if (res.success) {
+        setBioConfigured(true);
+        setShowBioPasswordPrompt(false);
+        setBioPassword('');
+        setBioMsg({ text: 'Empreinte digitale configurée avec succès !', type: 'success' });
+      } else {
+        setBioMsg({ text: res.error || 'Échec de l’activation biométrique.', type: 'error' });
+      }
+    } catch (err: any) {
+      setBioMsg({ text: err.message || 'Erreur inconnue.', type: 'error' });
+    } finally {
+      setBioLoading(false);
+    }
+  };
 
   async function handleForceUpdate() {
     setCheckingUpdate(true);
@@ -173,6 +227,93 @@ export default function SettingsPage() {
             </a>
           </div>
         </div>
+
+        {/* SÉCURITÉ & CONNEXION PAR EMPREINTE */}
+        {bioSupported && (
+          <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl border border-gray-100 dark:border-slate-700 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-orange-100 dark:bg-primary-950 text-primary-600 dark:text-primary-400 rounded-xl">
+                  <Fingerprint className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm text-gray-900 dark:text-white leading-tight">
+                    Connexion par empreinte
+                  </h2>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    {bioConfigured
+                      ? 'Actif sur cet appareil (Empreinte / Face ID / Windows Hello)'
+                      : 'Connectez-vous en 1 touche sans retaper votre mot de passe'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={bioConfigured}
+                disabled={bioLoading}
+                onClick={handleToggleBio}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  bioConfigured ? 'bg-primary-600' : 'bg-gray-200 dark:bg-slate-700'
+                } ${bioLoading ? 'opacity-50 cursor-wait' : ''}`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    bioConfigured ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {bioMsg && (
+              <div
+                className={`p-2.5 rounded-2xl text-xs font-semibold flex items-center gap-2 ${
+                  bioMsg.type === 'error'
+                    ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50'
+                    : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/50'
+                }`}
+              >
+                <span>{bioMsg.text}</span>
+              </div>
+            )}
+
+            {showBioPasswordPrompt && (
+              <form
+                onSubmit={handleConfirmBioPassword}
+                className="p-3 bg-gray-50 dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 space-y-2"
+              >
+                <p className="text-[11px] text-gray-600 dark:text-gray-300 font-medium">
+                  Confirmez votre mot de passe pour enregistrer l’empreinte sur cet appareil :
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    required
+                    placeholder="Votre mot de passe"
+                    value={bioPassword}
+                    onChange={(e) => setBioPassword(e.target.value)}
+                    className="flex-1 py-1.5 px-3 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-gray-900 dark:text-white outline-none focus:ring-1 focus:ring-primary-500 font-mono"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!bioPassword || bioLoading}
+                    className="py-1.5 px-3 bg-primary-600 text-white font-bold rounded-xl text-xs hover:bg-primary-700 disabled:opacity-50 transition"
+                  >
+                    {bioLoading ? '...' : 'Activer'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowBioPasswordPrompt(false)}
+                    className="py-1.5 px-2 text-gray-400 hover:text-gray-600 text-xs"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
 
         {/* APPARENCE & THÈME */}
         <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl border border-gray-100 dark:border-slate-700 shadow-sm space-y-3">

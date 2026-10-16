@@ -2,11 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Clock, CheckCircle2, Eye, EyeOff, Sun, Moon } from 'lucide-react';
+import { Lock, Mail, User, AlertCircle, ArrowRight, ShieldCheck, Clock, CheckCircle2, Eye, EyeOff, Sun, Moon, Fingerprint } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useAuth } from '@/lib/authContext';
 import { useTheme } from '@/lib/theme';
+import {
+  isBiometricAvailable,
+  isBiometricConfigured,
+  getBiometricUser,
+  authenticateBiometric,
+  enableBiometric,
+} from '@/lib/biometrics';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,6 +26,22 @@ export default function LoginPage() {
       router.push('/messages');
     }
   }, [user, isApproved, router]);
+
+  // Biométrie
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [hasBiometric, setHasBiometric] = useState(false);
+  const [biometricUser, setBiometricUser] = useState<{ email: string; displayName?: string } | null>(null);
+  const [biometricLoading, setBiometricLoading] = useState(false);
+  const [enableBiometricAfterLogin, setEnableBiometricAfterLogin] = useState(true);
+
+  useEffect(() => {
+    isBiometricAvailable().then((avail) => setBiometricSupported(avail));
+    const configured = isBiometricConfigured();
+    setHasBiometric(configured);
+    if (configured) {
+      setBiometricUser(getBiometricUser());
+    }
+  }, []);
   
   // Champs formulaire
   const [email, setEmail] = useState('');
@@ -33,6 +56,61 @@ export default function LoginPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const supabaseReady = isSupabaseConfigured();
+
+  async function handleBiometricLogin() {
+    setError(null);
+    setBiometricLoading(true);
+    try {
+      const res = await authenticateBiometric();
+      if (!res.success || !res.email || !res.password) {
+        if (res.error && !res.error.includes('annulée')) {
+          setError(res.error);
+        }
+        setBiometricLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      const { data, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: res.email,
+        password: res.password,
+      });
+
+      if (signInErr) throw signInErr;
+
+      if (data.user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('status, role')
+          .eq('id', data.user.id)
+          .single();
+
+        if (prof?.status === 'pending') {
+          setPendingNotice(true);
+          setLoading(false);
+          setBiometricLoading(false);
+          return;
+        }
+
+        if (prof?.status === 'rejected') {
+          setError("Votre demande d'accès a été refusée par l'administrateur.");
+          await supabase.auth.signOut();
+          setLoading(false);
+          setBiometricLoading(false);
+          return;
+        }
+
+        await refreshProfile();
+        router.push('/messages');
+      }
+    } catch (err: any) {
+      console.error('Erreur login biométrique:', err);
+      setError(err?.message || 'Erreur lors de la connexion par empreinte.');
+    } finally {
+      setBiometricLoading(false);
+      setLoading(false);
+    }
+  }
 
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -114,6 +192,16 @@ export default function LoginPage() {
           }
 
           await refreshProfile();
+
+          // Enregistrer l'empreinte si l'option est cochée et supportée
+          if (biometricSupported && enableBiometricAfterLogin && !hasBiometric) {
+            try {
+              await enableBiometric(email.trim(), password, prof?.full_name || undefined);
+            } catch (bioErr) {
+              console.warn('Enregistrement biométrique ignoré:', bioErr);
+            }
+          }
+
           router.push('/messages');
         }
       }
@@ -221,6 +309,34 @@ export default function LoginPage() {
             </div>
           )}
 
+          {/* BOUTON CONNEXION BIOMÉTRIQUE RAPIDE */}
+          {mode === 'login' && hasBiometric && (
+            <div className="mb-6 space-y-3">
+              <button
+                type="button"
+                onClick={handleBiometricLogin}
+                disabled={biometricLoading || loading}
+                className="w-full py-3.5 px-4 bg-orange-50 hover:bg-orange-100/80 active:bg-orange-100 text-primary-700 border-2 border-primary-500/30 rounded-2xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2.5 shadow-xs group"
+              >
+                <Fingerprint className="w-5 h-5 text-primary-600 group-hover:scale-110 transition-transform" />
+                <span>
+                  {biometricLoading ? 'Vérification de l’empreinte...' : 'Se connecter avec l’empreinte digitale'}
+                </span>
+              </button>
+              {biometricUser?.email && (
+                <p className="text-center text-[11px] text-gray-500">
+                  Compte mémorisé : <span className="font-semibold text-gray-700">{biometricUser.displayName || biometricUser.email}</span>
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 pt-1">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-[11px] text-gray-400 font-semibold uppercase">ou avec mot de passe</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleAuth} className="space-y-4">
             {mode === 'register' && (
               <div>
@@ -283,6 +399,21 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            {mode === 'login' && biometricSupported && !hasBiometric && (
+              <label className="flex items-center gap-2 cursor-pointer pt-1 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={enableBiometricAfterLogin}
+                  onChange={(e) => setEnableBiometricAfterLogin(e.target.checked)}
+                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 w-4 h-4"
+                />
+                <span className="flex items-center gap-1.5 font-medium">
+                  <Fingerprint className="w-3.5 h-3.5 text-primary-600" />
+                  Activer l'empreinte digitale sur cet appareil
+                </span>
+              </label>
+            )}
 
             <button
               type="submit"
