@@ -24,6 +24,9 @@ import {
   VolumeX,
   Music,
   Fingerprint,
+  Coffee,
+  Heart,
+  LifeBuoy,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { useAuth } from '@/lib/authContext';
@@ -36,7 +39,11 @@ import {
 import {
   isNotificationSupported,
   getNotificationPermission,
+  getNotificationPermissionStatus,
+  getSystemNotificationPreference,
+  setSystemNotificationPreference,
   requestNotificationPermission,
+  requestNotificationPermissionDetailed,
   sendLocalNotification,
   getNotificationSoundPreference,
   setNotificationSoundPreference,
@@ -50,6 +57,7 @@ export default function SettingsPage() {
   const [data, setData] = useState<AppData | null>(null);
   const { preference, setPreference } = useTheme();
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+  const [systemNotifEnabled, setSystemNotifEnabled] = useState(false);
   const [testSent, setTestSent] = useState(false);
 
   // Préférences sonores des notifications
@@ -71,7 +79,11 @@ export default function SettingsPage() {
   useEffect(() => {
     setData(loadLocalData());
     if (isNotificationSupported()) {
-      setNotifPermission(getNotificationPermission());
+      getNotificationPermissionStatus().then((perm) => {
+        setNotifPermission(perm);
+        const pref = getSystemNotificationPreference();
+        setSystemNotifEnabled(pref && perm === 'granted');
+      });
     }
     const soundPref = getNotificationSoundPreference();
     setSoundEnabled(soundPref.enabled);
@@ -115,6 +127,40 @@ export default function SettingsPage() {
     }
   };
 
+  async function handleToggleSystemNotifications() {
+    if (!systemNotifEnabled) {
+      const result = await requestNotificationPermissionDetailed();
+      setNotifPermission(result.status);
+
+      if (result.status === 'granted') {
+        setSystemNotifEnabled(true);
+        setSystemNotificationPreference(true);
+        await sendLocalNotification('Notifications activées ! 🎉', {
+          body: 'Le volet de notification de votre appareil est désormais connecté à Keo Family.',
+        });
+      } else if (result.needsApkUpdate) {
+        setSystemNotifEnabled(false);
+        setSystemNotificationPreference(false);
+        alert(
+          "📲 Mise à jour de l'application Keo Family requise :\n\n" +
+          "Pour faire apparaître les alertes dans le volet Android, vous devez installer le nouvel APK.\n\n" +
+          "La nouvelle version intègre les pilotes natifs Android. Téléchargez-la via le bouton 'Télécharger le nouvel APK' ci-dessous."
+        );
+      } else {
+        setSystemNotifEnabled(false);
+        setSystemNotificationPreference(false);
+        alert(
+          "Les notifications sont bloquées par votre appareil ou navigateur.\n\n" +
+          "1. Ouvrez Paramètres du téléphone > Applications > Keo Family > Notifications et activez 'Autoriser'.\n" +
+          "2. Si vous accédez à Keo Family depuis Chrome, cliquez sur les paramètres du site (icône cadenas) pour autoriser les notifications."
+        );
+      }
+    } else {
+      setSystemNotifEnabled(false);
+      setSystemNotificationPreference(false);
+    }
+  }
+
   async function handleForceUpdate() {
     setCheckingUpdate(true);
     setUpdateStatus('Purger le cache et vérifier la dernière version...');
@@ -130,7 +176,7 @@ export default function SettingsPage() {
         }
       }
       localStorage.setItem('dar_app_version', '1.2.0');
-      setUpdateStatus('Mise à jour terminée ! Rechargement de Dar...');
+      setUpdateStatus('Mise à jour terminée ! Rechargement de Keo Family...');
       setTimeout(() => {
         window.location.reload();
       }, 1000);
@@ -184,7 +230,7 @@ export default function SettingsPage() {
                   Mises à jour de l'application
                 </h2>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                  Version installée : <span className="font-bold text-primary-600 dark:text-primary-400">Dar v1.2.0</span>
+                  Version installée : <span className="font-bold text-primary-600 dark:text-primary-400">Keo Family v1.2.0</span>
                 </p>
               </div>
             </div>
@@ -222,7 +268,7 @@ export default function SettingsPage() {
               className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
             >
               <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-              <span>Télécharger directement l'APK Android (Dar.apk)</span>
+              <span>Télécharger directement l'APK Android (Keo Family)</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-60" />
             </a>
           </div>
@@ -357,43 +403,54 @@ export default function SettingsPage() {
             </div>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                notifPermission === 'granted'
+                systemNotifEnabled && notifPermission === 'granted'
                   ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                   : notifPermission === 'denied'
                   ? 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300'
                   : 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-gray-300'
               }`}
             >
-              {notifPermission === 'granted'
+              {systemNotifEnabled && notifPermission === 'granted'
                 ? 'Volet actif'
                 : notifPermission === 'denied'
-                ? 'Bloquées'
-                : 'Non activées'}
+                ? 'Bloqué'
+                : 'Désactivé'}
             </span>
           </div>
 
-          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-            Recevez les alertes de nouveaux messages et d'événements directement dans le volet de notification de votre téléphone avec une sonnerie personnalisée.
-          </p>
+          {/* INTERRUPTEUR BASCULE ON / OFF DU VOLET DE NOTIFICATION */}
+          <div className="bg-gray-50 dark:bg-slate-750 p-3.5 rounded-2xl border border-gray-100 dark:border-slate-700 flex items-center justify-between gap-3">
+            <div className="space-y-0.5 flex-1 pr-2">
+              <div className="flex items-center gap-1.5">
+                <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                <span className="text-xs font-bold text-gray-900 dark:text-white">
+                  Volet de notification de l'appareil
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug">
+                Afficher une alerte dans la barre supérieure de votre téléphone lors de nouveaux messages ou rendez-vous.
+              </p>
+            </div>
 
-          {notifPermission !== 'granted' && (
+            {/* BOUTON POUSSOIR ON / OFF */}
             <button
               type="button"
-              onClick={async () => {
-                const perm = await requestNotificationPermission();
-                setNotifPermission(perm);
-                if (perm === 'granted') {
-                  sendLocalNotification('Notifications activées ! 🎉', {
-                    body: 'Vous recevrez les alertes de nouveaux messages et d’agenda dans le volet.',
-                  });
-                }
-              }}
-              className="w-full py-2.5 px-3 rounded-2xl bg-primary-600 text-white text-xs font-bold hover:bg-primary-700 transition flex items-center justify-center gap-1.5 shadow-xs"
+              role="switch"
+              aria-checked={systemNotifEnabled && notifPermission === 'granted'}
+              onClick={handleToggleSystemNotifications}
+              className={`relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                systemNotifEnabled && notifPermission === 'granted'
+                  ? 'bg-emerald-500'
+                  : 'bg-gray-300 dark:bg-slate-600'
+              }`}
             >
-              <BellRing className="w-4 h-4" />
-              <span>Activer les notifications dans le volet de l'appareil</span>
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  systemNotifEnabled && notifPermission === 'granted' ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
             </button>
-          )}
+          </div>
 
           {/* RÉGLAGE DU SON */}
           <div className="pt-2 border-t border-gray-100 dark:border-slate-700 space-y-3">
@@ -481,7 +538,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => {
-                sendLocalNotification('Notification de test Dar 🔔', {
+                sendLocalNotification('Notification de test Keo Family 🔔', {
                   body: `La notification apparaît dans votre volet avec la sonnerie « ${
                     NOTIFICATION_SOUNDS.find((s) => s.id === soundType)?.name || 'Carillon'
                   } » !`,
@@ -506,6 +563,77 @@ export default function SettingsPage() {
                 </>
               )}
             </button>
+          </div>
+        </div>
+
+        {/* TÉLÉCHARGEMENT APPLICATION ANDROID (APK) */}
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-slate-800 dark:to-slate-800 p-4 rounded-3xl border border-orange-200/80 dark:border-slate-700 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-orange-500 text-white rounded-xl">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="font-bold text-sm text-gray-900 dark:text-white">Application Android (APK)</h2>
+                <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                  Version native avec volet de notifications et fichiers .ics
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300">
+              v1.3.0
+            </span>
+          </div>
+
+          <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+            Pour que les alertes dans le volet et l'ouverture automatique des fichiers calendrier (*.ics) fonctionnent, installez la dernière version de <strong>Keo Family</strong>.
+          </p>
+
+          <a
+            href="https://github.com/heyhacene/dar/releases"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+          >
+            <Download className="w-4 h-4" />
+            <span>Télécharger la dernière version de Keo Family (APK)</span>
+            <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+          </a>
+        </div>
+
+        {/* SOUTIEN DU PROJET & ASSISTANCE */}
+        <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-slate-800 dark:to-slate-800 p-4 rounded-3xl border border-amber-200/80 dark:border-slate-700 shadow-sm space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-gradient-to-tr from-amber-500 to-orange-500 text-white rounded-xl shadow-xs">
+              <Heart className="w-5 h-5 fill-current" />
+            </div>
+            <div>
+              <h2 className="font-bold text-sm text-gray-900 dark:text-white">Soutenir le projet & Assistance</h2>
+              <p className="text-[11px] text-gray-600 dark:text-gray-400">
+                Une suggestion, un besoin d'aide ou envie d'encourager le développement ?
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <a
+              href="https://ko-fi.com/keo_app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-2.5 px-3 rounded-2xl bg-[#FF5E5B] hover:bg-[#e04f4c] text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+            >
+              <Coffee className="w-4 h-4" />
+              <span>Offrir un café sur Ko-fi</span>
+              <ExternalLink className="w-3.5 h-3.5 opacity-80" />
+            </a>
+
+            <a
+              href="mailto:heyhacene@gmail.com?subject=%5BKeo%20Family%5D%20Assistance%20%26%20Feedback"
+              className="w-full py-2.5 px-3 rounded-2xl bg-white dark:bg-slate-700 hover:bg-gray-50 dark:hover:bg-slate-650 text-gray-800 dark:text-white border border-gray-200 dark:border-slate-600 text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+            >
+              <LifeBuoy className="w-4 h-4 text-orange-500" />
+              <span>Assistance & Feedback</span>
+            </a>
           </div>
         </div>
 

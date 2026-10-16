@@ -138,7 +138,7 @@ export default function PlanningPage() {
 
   return (
     <div className="pb-32">
-      <Header title="Planning des repas" onRefresh={() => syncWithGoogle(data).then(setData)} />
+      <Header title="Planning des repas" onRefresh={() => loadCloudData().then(setData)} />
       <CuisineTabs />
 
       <div className="p-4 space-y-4">

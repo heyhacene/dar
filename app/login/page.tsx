@@ -242,7 +242,7 @@ export default function LoginPage() {
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <Logo className="w-16 h-16 mx-auto mb-3 shadow-lg shadow-orange-500/20" size={64} />
-        <h1 className="text-2xl font-black text-gray-900 tracking-tight">Dar</h1>
+        <h1 className="text-2xl font-black text-gray-900 tracking-tight">Keo Family</h1>
         <p className="mt-1 text-sm text-gray-500">
           L'espace partagé de notre famille
         </p>
@@ -430,7 +430,7 @@ export default function LoginPage() {
               ) : (
                 <>
                   <ShieldCheck className="w-4 h-4" />
-                  <span>Demander l'accès à Dar</span>
+                  <span>Demander l'accès à Keo Family</span>
                 </>
               )}
             </button>

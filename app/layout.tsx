@@ -10,7 +10,7 @@ import AppUpdateNotifier from '@/components/AppUpdateNotifier';
 import GlobalNotificationListener from '@/components/GlobalNotificationListener';
 
 export const metadata: Metadata = {
-  title: 'Dar | Espace Familial',
+  title: 'Keo Family | Espace Familial',
   description: 'Portail familial privé et partagé.',
   manifest: '/manifest.json',
   icons: {
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Dar',
+    title: 'Keo Family',
   },
 };
 

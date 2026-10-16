@@ -249,6 +249,25 @@ export default function AgendaPage() {
     }
   }
 
+  // Lecture et traitement du texte .ics
+  function processICSText(text: string, fileName: string) {
+    if (!text) return;
+    setImportFileName(fileName);
+    try {
+      const parsed = parseICS(text);
+      if (parsed.length === 0) {
+        alert('Aucun événement valide trouvé dans ce fichier .ics.');
+        return;
+      }
+      setImportedEvents(parsed);
+      setSelectedImportIndices(parsed.map((_, i) => i)); // Sélectionner tout par défaut
+      setShowImportModal(true);
+    } catch (err) {
+      console.error('Erreur lecture ICS:', err);
+      alert('Impossible de lire ce fichier calendrier .ics.');
+    }
+  }
+
   // Lecture et traitement du fichier .ics
   function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -258,31 +277,43 @@ export default function AgendaPage() {
   }
 
   function readAndParseICS(file: File) {
-    setImportFileName(file.name);
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      if (!text) return;
-      try {
-        const parsed = parseICS(text);
-        if (parsed.length === 0) {
-          alert('Aucun événement valide trouvé dans ce fichier .ics.');
-          return;
-        }
-        setImportedEvents(parsed);
-        setSelectedImportIndices(parsed.map((_, i) => i)); // Sélectionner tout par défaut
-        setShowImportModal(true);
-      } catch (err) {
-        console.error('Erreur lecture ICS:', err);
-        alert('Impossible de lire ce fichier calendrier .ics.');
+      if (text) {
+        processICSText(text, file.name);
       }
     };
     reader.readAsText(file);
   }
 
-  // Écoute de l'ouverture de fichiers .ics via l'OS (PWA file_handlers) ou Glisser-Déposer
+  // 1. Vérifier si un fichier ICS a été stocké par MainActivity (Android)
   useEffect(() => {
-    // 1. Web / PWA LaunchQueue API
+    if (authLoading) return;
+    try {
+      const pendingContent = sessionStorage.getItem('dar_pending_ics_content');
+      const pendingName = sessionStorage.getItem('dar_pending_ics_name') || 'rendez-vous.ics';
+      if (pendingContent) {
+        sessionStorage.removeItem('dar_pending_ics_content');
+        sessionStorage.removeItem('dar_pending_ics_name');
+        processICSText(pendingContent, pendingName);
+      }
+    } catch (err) {
+      console.error('Erreur lecture pending ICS sessionStorage:', err);
+    }
+  }, [authLoading, user]);
+
+  // Écoute de l'ouverture de fichiers .ics via Android (Capacitor), PWA file_handlers ou Glisser-Déposer
+  useEffect(() => {
+    // 1. Android Capacitor Intent dispatch en temps réel
+    const handleCapacitorICS = (e: any) => {
+      if (e.detail?.content) {
+        processICSText(e.detail.content, e.detail.name || 'rendez-vous.ics');
+      }
+    };
+    window.addEventListener('dar:open-ics', handleCapacitorICS);
+
+    // 2. Web / PWA LaunchQueue API
     if (typeof window !== 'undefined' && 'launchQueue' in window && (window as any).launchQueue?.setConsumer) {
       (window as any).launchQueue.setConsumer(async (launchParams: any) => {
         if (!launchParams?.files?.length) return;
@@ -298,7 +329,7 @@ export default function AgendaPage() {
       });
     }
 
-    // 2. Glisser-déposer (Drag & Drop) d'un fichier .ics directement sur la page
+    // 3. Glisser-déposer (Drag & Drop) d'un fichier .ics directement sur la page
     const handleDragOver = (e: DragEvent) => {
       e.preventDefault();
     };
@@ -316,6 +347,7 @@ export default function AgendaPage() {
     window.addEventListener('dragover', handleDragOver);
     window.addEventListener('drop', handleDrop);
     return () => {
+      window.removeEventListener('dar:open-ics', handleCapacitorICS);
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
@@ -367,7 +399,7 @@ export default function AgendaPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dar-agenda-famille-${new Date().toISOString().slice(0, 10)}.ics`;
+    a.download = `keo-family-agenda-${new Date().toISOString().slice(0, 10)}.ics`;
     a.click();
     URL.revokeObjectURL(url);
   }

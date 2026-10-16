@@ -18,11 +18,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: 21
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -41,14 +44,57 @@ jobs:
           sed -i 's/\r$//' ./android/gradlew
           chmod +x ./android/gradlew
 
-      - name: Build Debug APK
+      - name: Build and Sign Android APK
         working-directory: ./android
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Rename APK
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          ALIAS: ${{ secrets.ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          mkdir -p build-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/Dar.apk
+          mkdir -p ../build-output
+          if [ -n "$SIGNING_KEY" ]; then
+            echo "🚀 Secrets de signature détectés : compilation Release officielle..."
+            ./gradlew assembleRelease --stacktrace
+
+            echo "🔑 Préparation du trousseau de clés..."
+            echo "$SIGNING_KEY" | base64 -d > release.keystore
+
+            APKSIGNER=$(find $ANDROID_SDK_ROOT/build-tools $ANDROID_HOME/build-tools /usr/local/lib/android/sdk/build-tools -name apksigner 2>/dev/null | sort -V | tail -n 1)
+            echo "Outil apksigner : $APKSIGNER"
+
+            UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+            if [ ! -f "$UNSIGNED_APK" ]; then
+              UNSIGNED_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+            fi
+
+            ZIPALIGN=$(find $ANDROID_SDK_ROOT/build-tools $ANDROID_HOME/build-tools /usr/local/lib/android/sdk/build-tools -name zipalign 2>/dev/null | sort -V | tail -n 1)
+            if [ -n "$ZIPALIGN" ] && ! $ZIPALIGN -c 4 "$UNSIGNED_APK"; then
+              echo "Alignement 4-byte de l'APK..."
+              $ZIPALIGN -p -f 4 "$UNSIGNED_APK" aligned.apk
+              UNSIGNED_APK="aligned.apk"
+            fi
+
+            echo "✍️ Signature cryptographique avec apksigner (v1, v2, v3)..."
+            $APKSIGNER sign \
+              --ks release.keystore \
+              --ks-key-alias "$ALIAS" \
+              --ks-pass "pass:$KEY_STORE_PASSWORD" \
+              --key-pass "pass:${KEY_PASSWORD:-$KEY_STORE_PASSWORD}" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              --out ../build-output/Dar.apk \
+              "$UNSIGNED_APK"
+
+            echo "🛡️ Validation de l'APK signé :"
+            $APKSIGNER verify --verbose ../build-output/Dar.apk
+            rm -f release.keystore aligned.apk
+          else
+            echo "⚠️ Secret SIGNING_KEY non configuré : compilation en mode Debug temporaire..."
+            ./gradlew assembleDebug --stacktrace
+            cp app/build/outputs/apk/debug/app-debug.apk ../build-output/Dar.apk
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -63,7 +109,11 @@ jobs:
         with:
           tag_name: latest
           name: "Dar (Dernière version APK Android)"
-          body: "Cliquez sur **Dar.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android."
+          body: |
+            Cliquez sur **Dar.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android.
+            - Signature cryptographique Release officielle (v1, v2, v3)
+            - Support des rendez-vous Doctolib et fichiers .ics
+            - Notifications dans le volet système
           files: build-output/Dar.apk
           make_latest: true
         env:

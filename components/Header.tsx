@@ -38,7 +38,7 @@ export default function Header({ title, onRefresh }: { title: string; onRefresh?
         <Logo className="w-9 h-9 shadow-xs rounded-2xl" />
         <div>
           <h1 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{title}</h1>
-          <p className="text-xs text-primary-600 dark:text-primary-400 font-semibold tracking-wide">Dar</p>
+          <p className="text-xs text-primary-600 dark:text-primary-400 font-semibold tracking-wide">Keo Family</p>
         </div>
       </div>
 

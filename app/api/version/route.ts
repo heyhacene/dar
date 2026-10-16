@@ -2,9 +2,9 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-export const CURRENT_BUILD = {
+const CURRENT_BUILD = {
   version: '1.2.0',
-  releaseName: 'Mises à jour Dar : Dark Mode, Tâches, Alertes & Nouvelles Icônes',
+  releaseName: 'Keo Family : Nouveau nom, Logo Le Foyer, Alertes & Calendrier',
   timestamp: new Date().toISOString(),
 };
 

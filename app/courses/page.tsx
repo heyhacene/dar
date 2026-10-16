@@ -327,7 +327,7 @@ export default function CoursesPage() {
   // Génération du texte de partage
   function generateShareText() {
     const activeItems = allItems.filter((i) => !i.checked);
-    if (activeItems.length === 0) return '🛒 Ma liste de courses Dar est vide !';
+    if (activeItems.length === 0) return '🛒 Ma liste de courses Keo Family est vide !';
 
     const grouped: Record<string, ShoppingItem[]> = {};
     activeItems.forEach((it) => {
@@ -336,7 +336,7 @@ export default function CoursesPage() {
       grouped[cat].push(it);
     });
 
-    let text = '🛒 *Liste de courses Dar :*\n\n';
+    let text = '🛒 *Liste de courses Keo Family :*\n\n';
     Object.keys(CATEGORY_METADATA)
       .sort((a, b) => CATEGORY_METADATA[a].order - CATEGORY_METADATA[b].order)
       .forEach((catKey) => {
@@ -386,7 +386,7 @@ export default function CoursesPage() {
 
   return (
     <div className="pb-32 bg-gray-50 dark:bg-slate-900 min-h-screen">
-      <Header title="Liste de Courses" onRefresh={() => syncWithGoogle(data).then(setData)} />
+      <Header title="Liste de Courses" onRefresh={() => loadCloudData().then(setData)} />
       <CuisineTabs />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto">

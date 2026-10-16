@@ -16,3 +16,5 @@ android/.idea
 *.apk
 *.aab
 build-output
+podclean
+kaster

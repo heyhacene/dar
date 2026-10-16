@@ -230,7 +230,7 @@ export function generateICS(events: any[]): string {
   let ics = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Dar//Espace Familial//FR',
+    'PRODID:-//Keo Family//Espace Familial//FR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
   ];
