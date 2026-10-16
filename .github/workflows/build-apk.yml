@@ -107,10 +107,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: latest
-          name: "Dar (Dernière version APK Android)"
+          tag_name: v1.3.0-build.${{ github.run_number }}
+          name: "Keo Family v1.3.0 (Build ${{ github.run_number }})"
           body: |
             Cliquez sur **Dar.apk** ci-dessous pour télécharger et installer l'application sur votre smartphone Android.
+            - Version : v1.3.0 (Build ${{ github.run_number }})
+            - Déverrouillage par empreinte digitale / biométrie
             - Signature cryptographique Release officielle (v1, v2, v3)
             - Support des rendez-vous Doctolib et fichiers .ics
             - Notifications dans le volet système
