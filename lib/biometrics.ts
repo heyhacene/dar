@@ -1,9 +1,30 @@
 /**
  * DAR / KEOFAMILY — BIOMETRICS & WEBAUTHN MANAGER
- * Authentification par empreinte digitale / Face ID / Windows Hello pour Dar
+ * Support bi-moteur :
+ * 1. Moteur Natif Mobile (Android / iOS) via @capgo/capacitor-native-biometric & Android Keystore
+ * 2. Moteur Web via WebAuthn (PublicKeyCredential)
  */
 
-const STORAGE_KEY = 'dar_biometrics_v1';
+import { Capacitor } from '@capacitor/core';
+
+const NATIVE_SERVER_ID = 'fr.keo.family';
+const NATIVE_STORAGE_KEY = 'dar_native_bio_active_v1';
+const NATIVE_USER_KEY = 'dar_native_bio_user_v1';
+const WEBAUTHN_STORAGE_KEY = 'dar_biometrics_v1';
+
+// Import dynamique sécurisé pour éviter toute évaluation SSR lors du build Next.js
+async function getNativeBiometric() {
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+    try {
+      const module = await import('@capgo/capacitor-native-biometric');
+      return module.NativeBiometric;
+    } catch (e) {
+      console.warn('NativeBiometric non disponible sur ce système:', e);
+      return null;
+    }
+  }
+  return null;
+}
 
 // Convertit Buffer <-> Base64URL
 function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
@@ -29,8 +50,8 @@ function base64UrlToBuffer(base64url: string): Uint8Array {
 function getRelyingPartyId(): string | undefined {
   if (typeof window === 'undefined') return undefined;
   const hostname = window.location.hostname;
-  if (!hostname || hostname === '' || hostname === '127.0.0.1') {
-    return 'localhost';
+  if (!hostname || hostname === '' || hostname === 'localhost' || hostname === '127.0.0.1') {
+    return undefined;
   }
   return hostname;
 }
@@ -40,14 +61,28 @@ function getRelyingPartyId(): string | undefined {
  */
 export async function isBiometricAvailable(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  if (!window.PublicKeyCredential) return false;
 
+  // 1. Mobile Android / iOS Natif
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const NativeBiometric = await getNativeBiometric();
+      if (!NativeBiometric) return false;
+      const res = await NativeBiometric.isAvailable();
+      return Boolean(res && res.isAvailable);
+    } catch (err) {
+      console.warn('Erreur détection biométrie native:', err);
+      return false;
+    }
+  }
+
+  // 2. Web / Navigateur (WebAuthn)
+  if (!window.PublicKeyCredential) return false;
   try {
     const available = await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
     return Boolean(available);
   } catch (err) {
-    console.warn('Erreur détection biométrie:', err);
-    return false;
+    console.warn('Erreur détection biométrie WebAuthn:', err);
+    return true;
   }
 }
 
@@ -56,8 +91,13 @@ export async function isBiometricAvailable(): Promise<boolean> {
  */
 export function isBiometricConfigured(): boolean {
   if (typeof window === 'undefined') return false;
+
+  if (Capacitor.isNativePlatform()) {
+    return localStorage.getItem(NATIVE_STORAGE_KEY) === 'true';
+  }
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(WEBAUTHN_STORAGE_KEY);
     if (!raw) return false;
     const parsed = JSON.parse(raw);
     return Boolean(parsed && parsed.credentialId && parsed.encryptedPayload);
@@ -67,12 +107,23 @@ export function isBiometricConfigured(): boolean {
 }
 
 /**
- * Récupère l'email enregistré pour la biométrie (sans déchiffrer le mot de passe)
+ * Récupère l'utilisateur enregistré pour la biométrie (email et nom d'affichage)
  */
 export function getBiometricUser(): { email: string; displayName?: string } | null {
   if (typeof window === 'undefined') return null;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const raw = localStorage.getItem(NATIVE_USER_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(WEBAUTHN_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (parsed && parsed.email) {
@@ -95,13 +146,57 @@ export async function enableBiometric(
   password: string,
   displayName?: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (typeof window === 'undefined' || !window.PublicKeyCredential) {
+  if (typeof window === 'undefined') {
+    return { success: false, error: 'Environnement non disponible' };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  // 1. Mobile Android / iOS Natif
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const NativeBiometric = await getNativeBiometric();
+      if (!NativeBiometric) {
+        return { success: false, error: 'Module biométrique natif non disponible' };
+      }
+
+      await NativeBiometric.verifyIdentity({
+        reason: 'Activez l’empreinte digitale pour Dar',
+        title: 'Dar — Enregistrement biométrique',
+        subtitle: 'Confirmez votre identité',
+        description: 'Posez votre doigt sur le capteur pour activer la connexion par empreinte',
+      });
+
+      await NativeBiometric.setCredentials({
+        username: cleanEmail,
+        password: password,
+        server: NATIVE_SERVER_ID,
+      });
+
+      localStorage.setItem(NATIVE_STORAGE_KEY, 'true');
+      localStorage.setItem(
+        NATIVE_USER_KEY,
+        JSON.stringify({ email: cleanEmail, displayName: displayName || cleanEmail.split('@')[0] })
+      );
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Erreur activation biométrie native:', err);
+      const msg = err.message || '';
+      if (msg.includes('cancel') || msg.includes('Cancel') || msg.includes('annulé') || msg.includes('user cancelled')) {
+        return { success: false, error: 'Activation biométrique annulée.' };
+      }
+      return { success: false, error: msg || 'Impossible d’activer l’empreinte sur cet appareil.' };
+    }
+  }
+
+  // 2. Web via WebAuthn
+  if (!window.PublicKeyCredential) {
     return { success: false, error: 'Biométrie non supportée sur ce navigateur' };
   }
 
   try {
     const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const cleanEmail = email.trim().toLowerCase();
     const userId = new TextEncoder().encode(cleanEmail);
     const rpId = getRelyingPartyId();
 
@@ -122,7 +217,7 @@ export async function enableBiometric(
           { alg: -257, type: 'public-key' }, // RS256
         ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Capteur de l'appareil
+          authenticatorAttachment: 'platform',
           userVerification: 'required',
         },
         timeout: 60000,
@@ -167,10 +262,10 @@ export async function enableBiometric(
       createdAt: new Date().toISOString(),
     };
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+    localStorage.setItem(WEBAUTHN_STORAGE_KEY, JSON.stringify(record));
     return { success: true };
   } catch (err: any) {
-    console.error('Erreur activation biométrie:', err);
+    console.error('Erreur activation biométrie WebAuthn:', err);
     if (err.name === 'NotAllowedError') {
       return { success: false, error: 'Autorisation biométrique refusée ou annulée.' };
     }
@@ -189,8 +284,49 @@ export async function authenticateBiometric(): Promise<{
 }> {
   if (typeof window === 'undefined') return { success: false, error: 'Environnement non disponible' };
 
+  // 1. Mobile Android / iOS Natif
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const NativeBiometric = await getNativeBiometric();
+      if (!NativeBiometric) {
+        return { success: false, error: 'Module biométrique natif non disponible' };
+      }
+
+      await NativeBiometric.verifyIdentity({
+        reason: 'Connectez-vous à Dar avec votre empreinte',
+        title: 'Dar — Connexion',
+        subtitle: 'Identification biométrique',
+        description: 'Posez votre doigt sur le capteur',
+      });
+
+      const credentials = await NativeBiometric.getCredentials({
+        server: NATIVE_SERVER_ID,
+      });
+
+      if (!credentials || !credentials.password) {
+        return { success: false, error: 'Aucun identifiant trouvé dans le trousseau sécurisé.' };
+      }
+
+      const user = getBiometricUser();
+
+      return {
+        success: true,
+        email: credentials.username || user?.email,
+        password: credentials.password,
+      };
+    } catch (err: any) {
+      console.error('Erreur déverrouillage biométrique natif:', err);
+      const msg = err.message || '';
+      if (msg.includes('cancel') || msg.includes('Cancel') || msg.includes('annulé') || msg.includes('user cancelled')) {
+        return { success: false, error: 'Reconnaissance biométrique annulée.' };
+      }
+      return { success: false, error: msg || 'Échec de la reconnaissance biométrique.' };
+    }
+  }
+
+  // 2. Web via WebAuthn
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(WEBAUTHN_STORAGE_KEY);
     if (!raw) return { success: false, error: 'Biométrie non configurée sur cet appareil' };
 
     const record = JSON.parse(raw);
@@ -246,7 +382,7 @@ export async function authenticateBiometric(): Promise<{
 
     return { success: true, email, password };
   } catch (err: any) {
-    console.error('Erreur déverrouillage biométrique:', err);
+    console.error('Erreur déverrouillage biométrique WebAuthn:', err);
     if (err.name === 'NotAllowedError') {
       return { success: false, error: 'Reconnaissance biométrique annulée.' };
     }
@@ -257,8 +393,22 @@ export async function authenticateBiometric(): Promise<{
 /**
  * Désactive l'empreinte digitale pour Dar
  */
-export function disableBiometric(): void {
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(STORAGE_KEY);
+export async function disableBiometric(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const NativeBiometric = await getNativeBiometric();
+      if (NativeBiometric) {
+        await NativeBiometric.deleteCredentials({ server: NATIVE_SERVER_ID });
+      }
+    } catch (e) {
+      console.warn('Erreur suppression credentials native:', e);
+    }
+    localStorage.removeItem(NATIVE_STORAGE_KEY);
+    localStorage.removeItem(NATIVE_USER_KEY);
+    return;
   }
+
+  localStorage.removeItem(WEBAUTHN_STORAGE_KEY);
 }
