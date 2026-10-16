@@ -35,10 +35,13 @@ import {
   Smile,
   Trash2,
   Sparkles,
+  FileText,
+  ArrowRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTheme } from '@/lib/theme';
+import { getLocalDocuments, getExpiryStatus } from '@/lib/documentVault';
 
 const PRESET_EMOJIS = [
   '👨', '🧔', '👩', '👱‍♀️', '👧', '👦', '👶', '👵', '👴', '🧕',
@@ -99,6 +102,20 @@ export default function FamillePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+
+  // Documents familiaux
+  const [docCount, setDocCount] = useState(0);
+  const [expiringDocCount, setExpiringDocCount] = useState(0);
+
+  useEffect(() => {
+    const docs = getLocalDocuments();
+    setDocCount(docs.length);
+    const expiring = docs.filter((d) => {
+      const s = getExpiryStatus(d.expiry_date);
+      return s.isExpired || s.isExpiringSoon;
+    }).length;
+    setExpiringDocCount(expiring);
+  }, []);
 
   // Avatar Modal
   const [showAvatarModal, setShowAvatarModal] = useState(false);
@@ -609,6 +626,44 @@ export default function FamillePage() {
             )}
           </div>
         </div>
+
+        {/* COFFRE DE DOCUMENTS FAMILIAUX */}
+        <Link
+          href="/documents"
+          className="block bg-gradient-to-r from-orange-50/70 via-amber-50/70 to-orange-50/70 dark:from-slate-800 dark:via-slate-800 dark:to-slate-800 rounded-2xl border border-orange-200/80 dark:border-slate-700 p-4 shadow-xs hover:shadow-md transition group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-primary-600 to-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-primary-600/30">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-gray-900 dark:text-white truncate">
+                    Coffre de Documents Familiaux
+                  </h3>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-950 text-primary-700 dark:text-primary-300">
+                    Sécurisé
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                  {docCount > 0
+                    ? `${docCount} document(s) classé(s) (passeports, santé, baux...)`
+                    : 'Passeports, cartes vitales, contrats, baux...'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {expiringDocCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                  {expiringDocCount} alerte(s)
+                </span>
+              )}
+              <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-primary-600 group-hover:translate-x-0.5 transition" />
+            </div>
+          </div>
+        </Link>
 
         {/* APPARENCE & MODE SOMBRE */}
         <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-xs space-y-3">

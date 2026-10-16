@@ -238,6 +238,10 @@ Voici les domaines sur lesquels je peux vous guider :
         router.push('/messages');
         setIsOpen(false);
         break;
+      case 'navigate_documents':
+        router.push('/documents');
+        setIsOpen(false);
+        break;
       case 'open_keopass':
         window.open('https://keopass.vercel.app', '_blank', 'noopener,noreferrer');
         break;

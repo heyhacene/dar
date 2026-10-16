@@ -15,6 +15,7 @@ export interface SupportAction {
     | 'navigate_taches'
     | 'navigate_settings'
     | 'navigate_messages'
+    | 'navigate_documents'
     | 'open_keopass'
     | 'download_apk';
   url?: string;
@@ -30,6 +31,81 @@ export interface SupportFAQ {
 }
 
 export const SUPPORT_FAQS: SupportFAQ[] = [
+  {
+    id: 'family-documents-vault',
+    title: 'Coffre de Documents Familiaux Sécurisé',
+    quickQuestion: 'Où retrouver les passeports, cartes vitales et attestations de la famille ?',
+    keywords: [
+      'document',
+      'documents',
+      'coffre',
+      'passeport',
+      'carte vitale',
+      'identite',
+      'bail',
+      'facture',
+      'assurance',
+      'ordonnance',
+      'certificat',
+      'scolaire',
+      'permis',
+      'carte grise',
+    ],
+    answer: `### 🗂️ Coffre de Documents Familiaux Sécurisé
+
+Keo Family intègre désormais un coffre numérique sécurisé pour centraliser tous les documents importants du foyer :
+
+1. **Catégories préconfigurées :**
+   * 🪪 **Identité & Famille :** Passeports, cartes d'identité, livret de famille, actes.
+   * 🏥 **Santé & Médical :** Cartes Vitales, ordonnances, attestations mutuelle.
+   * 🏫 **Scolarité :** Attestations scolaires, cantine, inscriptions.
+   * 🏠 **Logement :** Baux, quittances, factures EDF/gaz/eau.
+   * 🚗 **Véhicules :** Cartes grises, permis, contrôles techniques.
+   * 🛡️ **Assurances :** Responsabilité civile, habitation, auto.
+2. **Alertes d'expiration automatiques :**
+   * L'application vous alerte 90 jours avant l'expiration d'un passeport, permis ou contrat.
+3. **Disponible 100% hors-ligne :**
+   * Vos documents restent consultables même sans réseau (chez le médecin, à l'aéroport ou au garage).`,
+    action: {
+      label: 'Ouvrir le Coffre de Documents',
+      type: 'navigate_documents',
+    },
+  },
+  {
+    id: 'smart-push-notifications',
+    title: 'Notifications Push instantanées (Courses, Repas & Agenda)',
+    quickQuestion: 'Comment fonctionnent les alertes de courses et les rappels de repas ?',
+    keywords: [
+      'notification',
+      'notifications',
+      'alerte',
+      'alertes',
+      'push',
+      'rappel',
+      'courses',
+      'repas',
+      'menu',
+      'agenda',
+      'volet',
+      'sonnerie',
+    ],
+    answer: `### 🔔 Notifications Push Instantanées & Intelligentes
+
+Keo Family vous tient informé en temps réel des activités du foyer :
+
+1. **🛒 Courses collaboratives :**
+   * Quand un membre coche un article au supermarché ou ajoute un besoin urgent, toute la famille est synchronisée instantanément.
+2. **🍽️ Rappels du menu du jour :**
+   * Recevez une notification discrète vers midi et en fin d'après-midi pour vous rappeler ce qui est prévu au planning des repas !
+3. **📅 Rappels de rendez-vous :**
+   * Ne manquez aucun rendez-vous médical Doctolib ou événement familial important.
+4. **Réglages personnalisés :**
+   * Personnalisez le volet de notification et choisissez votre mélodie préférée dans les Paramètres.`,
+    action: {
+      label: 'Gérer mes notifications',
+      type: 'navigate_settings',
+    },
+  },
   {
     id: 'doctolib-ics-sync',
     title: 'Synchronisation Doctolib & Rendez-vous (.ics)',
