@@ -6,25 +6,12 @@
  */
 
 import { Capacitor } from '@capacitor/core';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 
 const NATIVE_SERVER_ID = 'fr.keo.family';
 const NATIVE_STORAGE_KEY = 'dar_native_bio_active_v1';
 const NATIVE_USER_KEY = 'dar_native_bio_user_v1';
 const WEBAUTHN_STORAGE_KEY = 'dar_biometrics_v1';
-
-// Import dynamique sécurisé pour éviter toute évaluation SSR lors du build Next.js
-async function getNativeBiometric() {
-  if (typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
-    try {
-      const module = await import('@capgo/capacitor-native-biometric');
-      return module.NativeBiometric;
-    } catch (e) {
-      console.warn('NativeBiometric non disponible sur ce système:', e);
-      return null;
-    }
-  }
-  return null;
-}
 
 // Convertit Buffer <-> Base64URL
 function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
@@ -65,13 +52,16 @@ export async function isBiometricAvailable(): Promise<boolean> {
   // 1. Mobile Android / iOS Natif
   if (Capacitor.isNativePlatform()) {
     try {
-      const NativeBiometric = await getNativeBiometric();
-      if (!NativeBiometric) return false;
       const res = await NativeBiometric.isAvailable();
       return Boolean(res && res.isAvailable);
     } catch (err) {
       console.warn('Erreur détection biométrie native:', err);
-      return false;
+      try {
+        const resFallback = await NativeBiometric.isAvailable({ useFallback: true });
+        return Boolean(resFallback && resFallback.isAvailable);
+      } catch {
+        return false;
+      }
     }
   }
 
@@ -155,18 +145,6 @@ export async function enableBiometric(
   // 1. Mobile Android / iOS Natif
   if (Capacitor.isNativePlatform()) {
     try {
-      const NativeBiometric = await getNativeBiometric();
-      if (!NativeBiometric) {
-        return { success: false, error: 'Module biométrique natif non disponible' };
-      }
-
-      await NativeBiometric.verifyIdentity({
-        reason: 'Activez l’empreinte digitale pour Dar',
-        title: 'Dar — Enregistrement biométrique',
-        subtitle: 'Confirmez votre identité',
-        description: 'Posez votre doigt sur le capteur pour activer la connexion par empreinte',
-      });
-
       await NativeBiometric.setCredentials({
         username: cleanEmail,
         password: password,
@@ -182,11 +160,7 @@ export async function enableBiometric(
       return { success: true };
     } catch (err: any) {
       console.error('Erreur activation biométrie native:', err);
-      const msg = err.message || '';
-      if (msg.includes('cancel') || msg.includes('Cancel') || msg.includes('annulé') || msg.includes('user cancelled')) {
-        return { success: false, error: 'Activation biométrique annulée.' };
-      }
-      return { success: false, error: msg || 'Impossible d’activer l’empreinte sur cet appareil.' };
+      return { success: false, error: err.message || 'Impossible d’activer l’empreinte sur cet appareil.' };
     }
   }
 
@@ -287,11 +261,6 @@ export async function authenticateBiometric(): Promise<{
   // 1. Mobile Android / iOS Natif
   if (Capacitor.isNativePlatform()) {
     try {
-      const NativeBiometric = await getNativeBiometric();
-      if (!NativeBiometric) {
-        return { success: false, error: 'Module biométrique natif non disponible' };
-      }
-
       await NativeBiometric.verifyIdentity({
         reason: 'Connectez-vous à Dar avec votre empreinte',
         title: 'Dar — Connexion',
@@ -394,21 +363,17 @@ export async function authenticateBiometric(): Promise<{
  * Désactive l'empreinte digitale pour Dar
  */
 export async function disableBiometric(): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const NativeBiometric = await getNativeBiometric();
-      if (NativeBiometric) {
+  if (typeof window !== 'undefined') {
+    if (Capacitor.isNativePlatform()) {
+      try {
         await NativeBiometric.deleteCredentials({ server: NATIVE_SERVER_ID });
+      } catch (e) {
+        console.warn('Erreur suppression credentials native:', e);
       }
-    } catch (e) {
-      console.warn('Erreur suppression credentials native:', e);
+      localStorage.removeItem(NATIVE_STORAGE_KEY);
+      localStorage.removeItem(NATIVE_USER_KEY);
+    } else {
+      localStorage.removeItem(WEBAUTHN_STORAGE_KEY);
     }
-    localStorage.removeItem(NATIVE_STORAGE_KEY);
-    localStorage.removeItem(NATIVE_USER_KEY);
-    return;
   }
-
-  localStorage.removeItem(WEBAUTHN_STORAGE_KEY);
 }

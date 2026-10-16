@@ -400,7 +400,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {mode === 'login' && biometricSupported && !hasBiometric && (
+            {mode === 'login' && !hasBiometric && (
               <label className="flex items-center gap-2 cursor-pointer pt-1 text-xs text-gray-600">
                 <input
                   type="checkbox"
