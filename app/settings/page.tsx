@@ -52,6 +52,7 @@ import {
   NOTIFICATION_SOUNDS,
   NotificationSoundType,
 } from '@/lib/notifications';
+import { fetchLatestDarApk, LatestApkRelease } from '@/lib/apkUpdate';
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
@@ -76,6 +77,7 @@ export default function SettingsPage() {
   // Mises à jour
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [latestApk, setLatestApk] = useState<LatestApkRelease | null>(null);
 
   useEffect(() => {
     setData(loadLocalData());
@@ -92,6 +94,7 @@ export default function SettingsPage() {
 
     isBiometricAvailable().then((avail) => setBioSupported(avail));
     setBioConfigured(isBiometricConfigured());
+    fetchLatestDarApk().then((apk) => setLatestApk(apk));
   }, []);
 
   const handleToggleBio = () => {
@@ -263,13 +266,17 @@ export default function SettingsPage() {
             </button>
 
             <a
-              href="https://github.com/heyhacene/dar/releases/latest/download/Dar.apk"
+              href={latestApk ? latestApk.downloadUrl : "https://github.com/heyhacene/dar/releases/latest"}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
             >
               <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-              <span>Télécharger directement l'APK Android (Keo Family)</span>
+              <span>
+                {latestApk
+                  ? `Télécharger ${latestApk.filename}`
+                  : "Télécharger l'APK Android (Keo Family)"}
+              </span>
               <ExternalLink className="w-3.5 h-3.5 opacity-60" />
             </a>
           </div>
@@ -591,13 +598,17 @@ export default function SettingsPage() {
           </p>
 
           <a
-            href="https://github.com/heyhacene/dar/releases"
+            href={latestApk ? latestApk.downloadUrl : "https://github.com/heyhacene/dar/releases/latest"}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
           >
             <Download className="w-4 h-4" />
-            <span>Télécharger la dernière version de Keo Family (APK)</span>
+            <span>
+              {latestApk
+                ? `Télécharger ${latestApk.filename}`
+                : 'Télécharger la dernière version de Keo Family (APK)'}
+            </span>
             <ExternalLink className="w-3.5 h-3.5 opacity-80" />
           </a>
         </div>
