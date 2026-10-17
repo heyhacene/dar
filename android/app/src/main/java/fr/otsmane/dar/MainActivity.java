@@ -141,6 +141,11 @@ public class MainActivity extends BridgeActivity {
     private void handleCalendarViewIntent(Intent intent) {
         Uri uri = intent.getData();
         if (uri != null) {
+            String importParam = uri.getQueryParameter("keonote_import");
+            if (importParam != null && !importParam.isEmpty()) {
+                dispatchKeoNoteImportToWebView(importParam, null, null);
+                return;
+            }
             readIcsFromUri(uri);
         } else {
             handleCalendarInsertIntent(intent);
@@ -153,12 +158,47 @@ public class MainActivity extends BridgeActivity {
             readIcsFromUri(streamUri);
         } else {
             String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-            if (text != null && (text.contains("BEGIN:VCALENDAR") || text.contains("BEGIN:VEVENT"))) {
-                pendingICSContent = text;
-                pendingICSFileName = "rendez-vous.ics";
-                dispatchICSToWebView();
+            String subject = intent.getStringExtra(Intent.EXTRA_SUBJECT);
+            if (text != null) {
+                if (text.contains("BEGIN:VCALENDAR") || text.contains("BEGIN:VEVENT")) {
+                    pendingICSContent = text;
+                    pendingICSFileName = "rendez-vous.ics";
+                    dispatchICSToWebView();
+                } else {
+                    dispatchKeoNoteImportToWebView(null, subject, text);
+                }
             }
         }
+    }
+
+    private void dispatchKeoNoteImportToWebView(final String b64Payload, final String subject, final String rawText) {
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) return;
+
+        webView.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String quotedB64 = b64Payload != null ? JSONObject.quote(b64Payload) : "null";
+                    String quotedSubj = subject != null ? JSONObject.quote(subject) : "null";
+                    String quotedText = rawText != null ? JSONObject.quote(rawText) : "null";
+
+                    String js = "(function() {" +
+                        "  try {" +
+                        "    var b64 = " + quotedB64 + ";" +
+                        "    var subj = " + quotedSubj + ";" +
+                        "    var raw = " + quotedText + ";" +
+                        "    if (b64) sessionStorage.setItem('dar_pending_keonote_import', b64);" +
+                        "    window.dispatchEvent(new CustomEvent('dar:keonote-import', { detail: { b64: b64, title: subj, rawText: raw } }));" +
+                        "  } catch(e) { console.error('Erreur dispatch KeoNote import:', e); }" +
+                        "})();";
+
+                    webView.evaluateJavascript(js, null);
+                } catch (Exception e) {
+                    Log.e(TAG, "Erreur evaluateJavascript pour KeoNote import", e);
+                }
+            }
+        });
     }
 
     private void readIcsFromUri(Uri uri) {

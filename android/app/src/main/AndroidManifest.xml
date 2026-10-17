@@ -145,7 +145,7 @@
                 <data android:scheme="webcals" />
             </intent-filter>
 
-            <!-- 4. Partager vers Dar (ACTION_SEND) -->
+            <!-- 4. Partager vers Dar / Keo Family (ACTION_SEND Calendrier + Notes Texte) -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -155,6 +155,19 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/ics" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- 5. Liens directs depuis Keo Note vers Keo Family -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="dar.otsmane.fr" />
             </intent-filter>
         </activity>
 
