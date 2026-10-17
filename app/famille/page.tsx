@@ -310,6 +310,7 @@ export default function FamillePage() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
+        .neq('email', 'keonote-sync@otsmane.fr')
         .order('created_at', { ascending: true });
 
       if (error) throw error;
