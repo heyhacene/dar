@@ -138,12 +138,19 @@ public class MainActivity extends BridgeActivity {
         dispatchICSToWebView();
     }
 
+    private String pendingKeoNoteB64 = null;
+    private String pendingKeoNoteSubject = null;
+    private String pendingKeoNoteRawText = null;
+
     private void handleCalendarViewIntent(Intent intent) {
         Uri uri = intent.getData();
         if (uri != null) {
             String importParam = uri.getQueryParameter("keonote_import");
             if (importParam != null && !importParam.isEmpty()) {
-                dispatchKeoNoteImportToWebView(importParam, null, null);
+                pendingKeoNoteB64 = importParam;
+                pendingKeoNoteSubject = null;
+                pendingKeoNoteRawText = null;
+                scheduleKeoNoteImportDispatches();
                 return;
             }
             readIcsFromUri(uri);
@@ -165,40 +172,76 @@ public class MainActivity extends BridgeActivity {
                     pendingICSFileName = "rendez-vous.ics";
                     dispatchICSToWebView();
                 } else {
-                    dispatchKeoNoteImportToWebView(null, subject, text);
+                    pendingKeoNoteB64 = null;
+                    pendingKeoNoteSubject = subject;
+                    pendingKeoNoteRawText = text;
+                    scheduleKeoNoteImportDispatches();
                 }
             }
         }
     }
 
-    private void dispatchKeoNoteImportToWebView(final String b64Payload, final String subject, final String rawText) {
+    private void scheduleKeoNoteImportDispatches() {
         WebView webView = getBridge() != null ? getBridge().getWebView() : null;
         if (webView == null) return;
 
-        webView.post(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    String quotedB64 = b64Payload != null ? JSONObject.quote(b64Payload) : "null";
-                    String quotedSubj = subject != null ? JSONObject.quote(subject) : "null";
-                    String quotedText = rawText != null ? JSONObject.quote(rawText) : "null";
-
-                    String js = "(function() {" +
-                        "  try {" +
-                        "    var b64 = " + quotedB64 + ";" +
-                        "    var subj = " + quotedSubj + ";" +
-                        "    var raw = " + quotedText + ";" +
-                        "    if (b64) sessionStorage.setItem('dar_pending_keonote_import', b64);" +
-                        "    window.dispatchEvent(new CustomEvent('dar:keonote-import', { detail: { b64: b64, title: subj, rawText: raw } }));" +
-                        "  } catch(e) { console.error('Erreur dispatch KeoNote import:', e); }" +
-                        "})();";
-
-                    webView.evaluateJavascript(js, null);
-                } catch (Exception e) {
-                    Log.e(TAG, "Erreur evaluateJavascript pour KeoNote import", e);
+        int[] delays = new int[] { 0, 800, 1800, 3200 };
+        for (int delay : delays) {
+            webView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    dispatchKeoNoteImportToWebView();
                 }
-            }
-        });
+            }, delay);
+        }
+    }
+
+    private void dispatchKeoNoteImportToWebView() {
+        if (pendingKeoNoteB64 == null && pendingKeoNoteRawText == null) return;
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView == null) return;
+
+        final String b64Payload = pendingKeoNoteB64;
+        final String subject = pendingKeoNoteSubject;
+        final String rawText = pendingKeoNoteRawText;
+
+        try {
+            String quotedB64 = b64Payload != null ? JSONObject.quote(b64Payload) : "null";
+            String quotedSubj = subject != null ? JSONObject.quote(subject) : "null";
+            String quotedText = rawText != null ? JSONObject.quote(rawText) : "null";
+
+            String js = "(function() {" +
+                "  try {" +
+                "    if (!window.location || window.location.href === 'about:blank') return 'not_ready';" +
+                "    var b64 = " + quotedB64 + ";" +
+                "    var subj = " + quotedSubj + ";" +
+                "    var raw = " + quotedText + ";" +
+                "    if (b64) {" +
+                "      sessionStorage.setItem('dar_pending_keonote_import', b64);" +
+                "      localStorage.setItem('dar_pending_keonote_import', b64);" +
+                "    } else if (raw) {" +
+                "      var rawJson = JSON.stringify({ title: subj, rawText: raw });" +
+                "      sessionStorage.setItem('dar_pending_keonote_raw', rawJson);" +
+                "      localStorage.setItem('dar_pending_keonote_raw', rawJson);" +
+                "    }" +
+                "    window.dispatchEvent(new CustomEvent('dar:keonote-import', { detail: { b64: b64, title: subj, rawText: raw } }));" +
+                "    return 'ok';" +
+                "  } catch(e) { return 'err'; }" +
+                "})();";
+
+            webView.evaluateJavascript(js, new android.webkit.ValueCallback<String>() {
+                @Override
+                public void onReceiveValue(String value) {
+                    if (value != null && value.contains("ok")) {
+                        pendingKeoNoteB64 = null;
+                        pendingKeoNoteSubject = null;
+                        pendingKeoNoteRawText = null;
+                    }
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Erreur evaluateJavascript pour KeoNote import", e);
+        }
     }
 
     private void readIcsFromUri(Uri uri) {
@@ -281,6 +324,9 @@ public class MainActivity extends BridgeActivity {
         super.onResume();
         if (pendingICSContent != null) {
             dispatchICSToWebView();
+        }
+        if (pendingKeoNoteB64 != null || pendingKeoNoteRawText != null) {
+            scheduleKeoNoteImportDispatches();
         }
     }
 }

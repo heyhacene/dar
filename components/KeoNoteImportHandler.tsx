@@ -93,53 +93,98 @@ export default function KeoNoteImportHandler() {
     }
   };
 
+  const openFromRawText = (rawText: string, rawTitle?: string) => {
+    const text = String(rawText);
+    const firstLine = text.split('\n')[0]?.replace(/^[📝*\s]+|[*]+$/g, '').trim();
+    const title = rawTitle || firstLine?.slice(0, 60) || 'Note importée';
+    setPayload({
+      source: 'android_share',
+      target: 'taches',
+      title,
+      content: text,
+      todos: [],
+    });
+    setSelectedTarget('taches');
+    const lines = text
+      .split(/\n/)
+      .map((l) => l.replace(/^[•\-⬜✅📝✨📋🏷️*_]+\s*/, '').replace(/[*_]+$/, '').trim())
+      .filter(
+        (l) =>
+          l.length > 2 &&
+          !l.startsWith('Partagé depuis') &&
+          !l.startsWith('— Partagé') &&
+          !l.startsWith('Actions / À faire')
+      );
+    setSelectedItems(lines.length > 0 ? lines : [title]);
+    setSuccessMsg(null);
+  };
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // 1. Vérifier paramètre URL ?keonote_import=...
-    const params = new URLSearchParams(window.location.search);
-    const importParam = params.get('keonote_import');
-    if (importParam) {
-      decodeAndOpenPayload(importParam);
-      // Nettoyer l'URL sans recharger la page
-      const cleanUrl = window.location.pathname;
-      window.history.replaceState({}, '', cleanUrl);
-    }
+    const checkPendingImports = () => {
+      // 1. Vérifier paramètre URL ?keonote_import=...
+      const params = new URLSearchParams(window.location.search);
+      const importParam = params.get('keonote_import');
+      if (importParam) {
+        decodeAndOpenPayload(importParam);
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+        return;
+      }
 
-    // 2. Vérifier sessionStorage (envoyé depuis MainActivity Android Intent)
-    const pendingB64 = sessionStorage.getItem('dar_pending_keonote_import');
-    if (pendingB64) {
-      sessionStorage.removeItem('dar_pending_keonote_import');
-      decodeAndOpenPayload(pendingB64);
-    }
+      // 2. Vérifier sessionStorage & localStorage (envoyé depuis MainActivity Android Intent)
+      const pendingB64 =
+        sessionStorage.getItem('dar_pending_keonote_import') ||
+        localStorage.getItem('dar_pending_keonote_import');
+      if (pendingB64) {
+        sessionStorage.removeItem('dar_pending_keonote_import');
+        localStorage.removeItem('dar_pending_keonote_import');
+        decodeAndOpenPayload(pendingB64);
+        return;
+      }
+
+      const pendingRaw =
+        sessionStorage.getItem('dar_pending_keonote_raw') ||
+        localStorage.getItem('dar_pending_keonote_raw');
+      if (pendingRaw) {
+        sessionStorage.removeItem('dar_pending_keonote_raw');
+        localStorage.removeItem('dar_pending_keonote_raw');
+        try {
+          const parsedRaw = JSON.parse(pendingRaw);
+          openFromRawText(parsedRaw.rawText || pendingRaw, parsedRaw.title);
+        } catch (_) {
+          openFromRawText(pendingRaw);
+        }
+      }
+    };
+
+    checkPendingImports();
+    const t1 = setTimeout(checkPendingImports, 600);
+    const t2 = setTimeout(checkPendingImports, 1800);
 
     // 3. Écouter l'événement personnalisé dar:keonote-import
     const handleCustomEvent = (e: any) => {
       const b64 = e?.detail?.b64;
       if (b64) {
         sessionStorage.removeItem('dar_pending_keonote_import');
+        localStorage.removeItem('dar_pending_keonote_import');
         decodeAndOpenPayload(b64);
       } else if (e?.detail?.rawText) {
-        const text = String(e.detail.rawText);
-        const title = e?.detail?.title || text.split('\n')[0]?.slice(0, 60) || 'Note importée';
-        setPayload({
-          source: 'android_share',
-          target: 'taches',
-          title,
-          content: text,
-          todos: [],
-        });
-        setSelectedTarget('taches');
-        const lines = text
-          .split(/\n/)
-          .map((l) => l.replace(/^[•\-⬜✅📝✨📋🏷️]+\s*/, '').trim())
-          .filter((l) => l.length > 2 && !l.startsWith('Partagé depuis'));
-        setSelectedItems(lines.length > 0 ? lines : [title]);
+        sessionStorage.removeItem('dar_pending_keonote_raw');
+        localStorage.removeItem('dar_pending_keonote_raw');
+        openFromRawText(e.detail.rawText, e?.detail?.title);
       }
     };
 
     window.addEventListener('dar:keonote-import', handleCustomEvent);
-    return () => window.removeEventListener('dar:keonote-import', handleCustomEvent);
+    window.addEventListener('focus', checkPendingImports);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      window.removeEventListener('dar:keonote-import', handleCustomEvent);
+      window.removeEventListener('focus', checkPendingImports);
+    };
   }, []);
 
   if (!payload) return null;

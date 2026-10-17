@@ -51,6 +51,7 @@ import {
   playNotificationSound,
   NOTIFICATION_SOUNDS,
   NotificationSoundType,
+} from '@/lib/notifications';
 import {
   fetchLatestDarApk,
   getDirectDarApkUrl,

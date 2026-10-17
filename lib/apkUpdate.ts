@@ -6,7 +6,7 @@ export interface LatestApkRelease {
   sizeBytes: number;
 }
 
-export const DEFAULT_DAR_BUILD = process.env.NEXT_PUBLIC_BUILD_NUMBER || '30';
+export const DEFAULT_DAR_BUILD = process.env.NEXT_PUBLIC_BUILD_NUMBER || '32';
 
 export function getDirectDarApkUrl(buildNumber: string = DEFAULT_DAR_BUILD): string {
   return `https://github.com/heyhacene/dar/releases/download/v1.3.0-build.${buildNumber}/KeoFamily-Build-${buildNumber}.apk`;
