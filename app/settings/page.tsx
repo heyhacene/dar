@@ -51,8 +51,12 @@ import {
   playNotificationSound,
   NOTIFICATION_SOUNDS,
   NotificationSoundType,
-} from '@/lib/notifications';
-import { fetchLatestDarApk, LatestApkRelease } from '@/lib/apkUpdate';
+import {
+  fetchLatestDarApk,
+  getDirectDarApkUrl,
+  getDirectDarApkFilename,
+  LatestApkRelease,
+} from '@/lib/apkUpdate';
 
 export default function SettingsPage() {
   const { user, profile } = useAuth();
@@ -266,16 +270,16 @@ export default function SettingsPage() {
             </button>
 
             <a
-              href={latestApk ? latestApk.downloadUrl : "https://github.com/heyhacene/dar/releases/latest"}
+              href={latestApk ? latestApk.downloadUrl : getDirectDarApkUrl()}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-650 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
+              className="w-full py-2 px-3 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-655 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl text-xs flex items-center justify-center gap-2 transition"
             >
               <Smartphone className="w-4 h-4 text-primary-600 dark:text-primary-400" />
               <span>
                 {latestApk
                   ? `Télécharger ${latestApk.filename}`
-                  : "Télécharger l'APK Android (Keo Family)"}
+                  : `Télécharger ${getDirectDarApkFilename()}`}
               </span>
               <ExternalLink className="w-3.5 h-3.5 opacity-60" />
             </a>
@@ -598,7 +602,7 @@ export default function SettingsPage() {
           </p>
 
           <a
-            href={latestApk ? latestApk.downloadUrl : "https://github.com/heyhacene/dar/releases/latest"}
+            href={latestApk ? latestApk.downloadUrl : getDirectDarApkUrl()}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full py-2.5 px-3 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
@@ -607,7 +611,7 @@ export default function SettingsPage() {
             <span>
               {latestApk
                 ? `Télécharger ${latestApk.filename}`
-                : 'Télécharger la dernière version de Keo Family (APK)'}
+                : `Télécharger ${getDirectDarApkFilename()}`}
             </span>
             <ExternalLink className="w-3.5 h-3.5 opacity-80" />
           </a>

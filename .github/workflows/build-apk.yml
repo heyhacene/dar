@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Build web application
+        env:
+          NEXT_PUBLIC_BUILD_NUMBER: ${{ github.run_number }}
+        run: npm run build
+
       - name: Sync Capacitor Android
         run: npx cap sync android
 
